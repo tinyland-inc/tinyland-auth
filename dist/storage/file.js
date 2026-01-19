@@ -24,10 +24,16 @@ const DEFAULT_CONFIG = {
  * - content/auth/logs/audit.json
  * - .totp-secrets/{handle}.json
  * - .totp-secrets/backup-codes/{userId}.json
+ *
+ * Features:
+ * - Atomic writes using temp file + rename pattern
+ * - File locking for concurrent access safety
  */
 export class FileStorageAdapter {
     config;
     basePath;
+    /** In-memory lock map to prevent concurrent file access */
+    locks = new Map();
     constructor(config = {}) {
         this.config = { ...DEFAULT_CONFIG, ...config };
         this.basePath = process.cwd();
@@ -87,9 +93,56 @@ export class FileStorageAdapter {
             throw error;
         }
     }
+    /**
+     * Atomically write JSON data to a file using temp file + rename pattern.
+     * This prevents partial writes and data corruption on crash.
+     */
     async writeJsonFile(filePath, data) {
+        await this.withFileLock(filePath, async () => {
+            await this.writeJsonFileAtomic(filePath, data);
+        });
+    }
+    /**
+     * Internal atomic write implementation using temp file + rename.
+     * The rename operation is atomic on POSIX systems.
+     */
+    async writeJsonFileAtomic(filePath, data) {
         await this.ensureDir(filePath);
-        await fs.writeFile(filePath, JSON.stringify(data, null, 2), 'utf8');
+        const tempPath = `${filePath}.${Date.now()}.${randomBytes(4).toString('hex')}.tmp`;
+        try {
+            await fs.writeFile(tempPath, JSON.stringify(data, null, 2), 'utf8');
+            await fs.rename(tempPath, filePath); // Atomic on POSIX
+        }
+        catch (error) {
+            // Clean up temp file on failure
+            try {
+                await fs.unlink(tempPath);
+            }
+            catch { /* ignore cleanup errors */ }
+            throw error;
+        }
+    }
+    /**
+     * Execute an operation with an exclusive lock on the given file path.
+     * Prevents race conditions when multiple operations target the same file.
+     */
+    async withFileLock(filePath, operation) {
+        // Wait for any existing lock on this file
+        const existing = this.locks.get(filePath);
+        if (existing) {
+            await existing;
+        }
+        // Create a new lock
+        let resolve;
+        const lockPromise = new Promise(r => { resolve = r; });
+        this.locks.set(filePath, lockPromise);
+        try {
+            return await operation();
+        }
+        finally {
+            resolve();
+            this.locks.delete(filePath);
+        }
     }
     // ============================================================================
     // User Operations

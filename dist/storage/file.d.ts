@@ -26,10 +26,16 @@ export interface FileStorageConfig extends StorageAdapterConfig {
  * - content/auth/logs/audit.json
  * - .totp-secrets/{handle}.json
  * - .totp-secrets/backup-codes/{userId}.json
+ *
+ * Features:
+ * - Atomic writes using temp file + rename pattern
+ * - File locking for concurrent access safety
  */
 export declare class FileStorageAdapter implements IStorageAdapter {
     private config;
     private basePath;
+    /** In-memory lock map to prevent concurrent file access */
+    private locks;
     constructor(config?: Partial<FileStorageConfig>);
     init(): Promise<void>;
     close(): Promise<void>;
@@ -40,7 +46,21 @@ export declare class FileStorageAdapter implements IStorageAdapter {
     private getBackupCodesPath;
     private ensureDir;
     private readJsonFile;
+    /**
+     * Atomically write JSON data to a file using temp file + rename pattern.
+     * This prevents partial writes and data corruption on crash.
+     */
     private writeJsonFile;
+    /**
+     * Internal atomic write implementation using temp file + rename.
+     * The rename operation is atomic on POSIX systems.
+     */
+    private writeJsonFileAtomic;
+    /**
+     * Execute an operation with an exclusive lock on the given file path.
+     * Prevents race conditions when multiple operations target the same file.
+     */
+    private withFileLock;
     getUser(id: string): Promise<AdminUser | null>;
     getUserByHandle(handle: string): Promise<AdminUser | null>;
     getUserByEmail(email: string): Promise<AdminUser | null>;
