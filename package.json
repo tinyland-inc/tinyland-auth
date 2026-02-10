@@ -22,6 +22,26 @@
     "./types": {
       "types": "./dist/types/index.d.ts",
       "import": "./dist/types/index.js"
+    },
+    "./totp": {
+      "types": "./dist/totp/index.d.ts",
+      "import": "./dist/totp/index.js"
+    },
+    "./activity": {
+      "types": "./dist/activity/index.d.ts",
+      "import": "./dist/activity/index.js"
+    },
+    "./audit": {
+      "types": "./dist/audit/index.d.ts",
+      "import": "./dist/audit/index.js"
+    },
+    "./cred-gen": {
+      "types": "./dist/cred-gen/index.d.ts",
+      "import": "./dist/cred-gen/index.js"
+    },
+    "./validation": {
+      "types": "./dist/validation/index.d.ts",
+      "import": "./dist/validation/index.js"
     }
   },
   "files": [

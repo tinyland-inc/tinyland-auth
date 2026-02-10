@@ -309,3 +309,49 @@ export {
   type BootstrapServiceConfig,
   type BootstrapState,
 } from './modules/bootstrap/index.js';
+
+// ============================================================================
+// TOTP Compatibility Utilities
+// ============================================================================
+
+export {
+  generateTOTPSecret,
+  generateTOTPUri,
+  generateTempPassword,
+  generateTOTPQRCode,
+  generateTOTPToken,
+  getTOTPTimeRemaining,
+} from './totp/compat.js';
+
+// ============================================================================
+// Credentials
+// ============================================================================
+
+export {
+  generateTextCredentialsCard,
+  maskPassword,
+  escapeXml,
+  type CredentialsCardData,
+  type CardDesignOptions,
+} from './cred-gen/generator.js';
+
+export {
+  generateUserCredentials,
+  generateCredentialsEmailHtml,
+  generateSecureCredentialsLink,
+  createCredentialsDownloadResponse,
+  type UserCredentials,
+} from './cred-gen/helpers.js';
+
+// ============================================================================
+// Validation
+// ============================================================================
+
+export {
+  validateHandle,
+  addHandle,
+  removeHandle,
+  listHandles,
+  type HandleValidatorConfig,
+  type HandleValidationResult,
+} from './validation/handle-validator.js';
