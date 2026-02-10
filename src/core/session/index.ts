@@ -188,6 +188,20 @@ export function classifyDevice(userAgent: string): 'mobile' | 'tablet' | 'deskto
 /**
  * Extract browser info from user agent
  */
+// ============================================================================
+// Activity Tracking
+// ============================================================================
+
+export {
+  createActivityTracker,
+  type ActivityTrackingConfig,
+  type ActivityType,
+  type ActivityEvent,
+} from './activity-tracking.js';
+
+/**
+ * Extract browser info from user agent
+ */
 export function extractBrowserInfo(userAgent: string): { browser: string; platform: string } {
   const ua = userAgent.toLowerCase();
 

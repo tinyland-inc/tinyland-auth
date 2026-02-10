@@ -51,3 +51,25 @@ export {
   type CSRFState,
   type CSRFStoreConfig,
 } from './stores/csrf.svelte.js';
+
+// Ownership guards (SvelteKit wrappers)
+export {
+  requireContentEditPermission,
+  requireContentDeletePermission,
+  isContentOwner,
+  canEditOwnedContent,
+  canDeleteOwnedContent,
+  isSoleOwner,
+  type OwnershipUser,
+  type OwnedContent,
+} from './ownership.js';
+
+// mTLS adapter (SvelteKit wrappers)
+export {
+  extractCertificateFromEvent,
+  requireMTLS,
+  getCertificateFingerprintFromEvent,
+  type CertificateHeaders,
+  type CertificateInfo,
+  type MTLSOptions,
+} from './mtls.js';

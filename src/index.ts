@@ -174,6 +174,17 @@ export {
   // Content visibility
   canViewContent,
   filterContentByVisibility,
+
+  // Content ownership
+  isContentOwner,
+  canEditOwnedContent,
+  canDeleteOwnedContent,
+  requireContentEditPermission,
+  requireContentDeletePermission,
+  isSoleOwner,
+  type OwnershipUser,
+  type OwnedContent,
+  type OwnershipError,
 } from './core/permissions/index.js';
 
 // ============================================================================
@@ -199,6 +210,12 @@ export {
   getHashRounds,
   generateSecurePassword,
   type PasswordHashConfig,
+  // mTLS
+  extractCertificate,
+  getCertificateFingerprint,
+  type CertificateHeaders,
+  type CertificateInfo,
+  type MTLSOptions,
 } from './core/security/index.js';
 
 // ============================================================================
@@ -238,6 +255,11 @@ export {
   classifyDevice,
   extractBrowserInfo,
   type SessionManagerConfig,
+  // Activity tracking
+  createActivityTracker,
+  type ActivityTrackingConfig,
+  type ActivityType,
+  type ActivityEvent,
 } from './core/session/index.js';
 
 // ============================================================================

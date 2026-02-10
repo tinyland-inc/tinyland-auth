@@ -372,6 +372,22 @@ export function filterContentByVisibility<T extends { visibility?: string; autho
 }
 
 // ============================================================================
+// Content Ownership
+// ============================================================================
+
+export {
+  isContentOwner,
+  canEditContent as canEditOwnedContent,
+  canDeleteContent as canDeleteOwnedContent,
+  requireContentEditPermission,
+  requireContentDeletePermission,
+  isSoleOwner,
+  type OwnershipUser,
+  type OwnedContent,
+  type OwnershipError,
+} from './ownership.js';
+
+// ============================================================================
 // Re-exports
 // ============================================================================
 

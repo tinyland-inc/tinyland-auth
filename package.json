@@ -1,5 +1,5 @@
 {
-  "name": "@tinyland/auth",
+  "name": "@tinyland-inc/tinyland-auth",
   "version": "0.1.0",
   "description": "Production-grade authentication system with TOTP, RBAC, and pluggable storage",
   "type": "module",
@@ -46,10 +46,10 @@
     "security"
   ],
   "author": "Tinyland.dev",
-  "license": "MIT",
+  "license": "Zlib AND LicenseRef-Tinyland-Proprietary",
   "repository": {
     "type": "git",
-    "url": "https://github.com/tinyland/tinyland-auth"
+    "url": "https://gitlab.com/tinyland-inc/tinyland-auth"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
@@ -64,7 +64,7 @@
     "@types/qrcode": "^1.5.5",
     "svelte": "^5.0.0",
     "typescript": "^5.0.0",
-    "vitest": "^2.0.0"
+    "vitest": "^4.0.0"
   },
   "peerDependencies": {
     "@sveltejs/kit": "^2.0.0",

@@ -244,3 +244,12 @@ export {
   generateSecurePassword,
   type PasswordHashConfig,
 } from './password.js';
+
+// mTLS certificate validation
+export {
+  extractCertificate,
+  getCertificateFingerprint,
+  type CertificateHeaders,
+  type CertificateInfo,
+  type MTLSOptions,
+} from './mtls.js';

@@ -1,0 +1,161 @@
+"""
+BUILD.bazel for @tinyland-inc/tinyland-auth.
+
+Dual-mode build: works with both pnpm (standalone) and Bazel (CI/production).
+  Standalone: cd packages/tinyland-auth && pnpm build
+  Monorepo:   bazel build //packages/tinyland-auth/...
+"""
+
+load("@aspect_rules_js//js:defs.bzl", "js_library", "js_test")
+load("@aspect_rules_js//npm:defs.bzl", "npm_package")
+load("@aspect_rules_ts//ts:defs.bzl", "ts_project")
+load("@npm//:defs.bzl", "npm_link_all_packages")
+
+# =============================================================================
+# npm link - makes node_modules available for this package
+# =============================================================================
+
+npm_link_all_packages(name = "node_modules")
+
+# =============================================================================
+# TypeScript compilation
+#
+# Compiles all .ts sources under src/ to ESM JavaScript with declarations.
+# Mirrors the standalone `tsc` build from package.json "build" script.
+#
+# tsconfig.json settings:
+#   target: ES2022
+#   module: NodeNext
+#   moduleResolution: NodeNext
+#   strict: true
+#   declaration: true
+#   declarationMap: true
+#   sourceMap: true
+# =============================================================================
+
+ts_project(
+    name = "tinyland_auth",
+    srcs = glob(
+        ["src/**/*.ts"],
+        exclude = [
+            "src/**/*.test.ts",
+            "src/**/*.spec.ts",
+        ],
+    ),
+    declaration = True,
+    declaration_map = True,
+    source_map = True,
+    tsconfig = ":tsconfig.json",
+    transpiler = "tsc",
+    deps = [
+        ":node_modules",
+        "//:tsconfig_base",
+        ":node_modules/bcryptjs",
+        ":node_modules/nanoid",
+        ":node_modules/otplib",
+        ":node_modules/qrcode",
+        ":node_modules/@types/bcryptjs",
+        ":node_modules/@types/node",
+        ":node_modules/@types/qrcode",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+# =============================================================================
+# npm package target
+#
+# Packages the compiled output into a publishable npm package structure
+# matching the "exports" field in package.json.
+# =============================================================================
+
+npm_package(
+    name = "pkg",
+    srcs = [
+        "package.json",
+        ":tinyland_auth",
+    ],
+    package = "@tinyland-inc/tinyland-auth",
+    version = "0.1.0",
+    visibility = ["//visibility:public"],
+)
+
+# =============================================================================
+# Test targets
+#
+# Compiles and runs vitest test files from the tests/ directory.
+# Uses vitest in run mode (no watch) for hermetic CI execution.
+# =============================================================================
+
+ts_project(
+    name = "tinyland_auth_test_lib",
+    srcs = glob(["tests/**/*.test.ts"]),
+    declaration = False,
+    source_map = True,
+    tsconfig = ":tsconfig.json",
+    transpiler = "tsc",
+    deps = [
+        ":tinyland_auth",
+        ":node_modules",
+        ":node_modules/vitest",
+    ],
+)
+
+js_test(
+    name = "test",
+    data = [
+        ":tinyland_auth",
+        ":tinyland_auth_test_lib",
+        ":node_modules",
+        ":node_modules/vitest",
+        "vitest.config.ts",
+    ],
+    entry_point = ":node_modules/vitest/vitest.mjs",
+    args = [
+        "run",
+        "--reporter=verbose",
+        "--config",
+        "$(rootpath vitest.config.ts)",
+    ],
+    log_level = "info",
+    visibility = ["//visibility:public"],
+)
+
+# =============================================================================
+# Typecheck-only target (no emit)
+#
+# Useful for CI pipelines that want fast type validation without full build.
+# =============================================================================
+
+ts_project(
+    name = "typecheck",
+    srcs = glob(["src/**/*.ts"]),
+    declaration = False,
+    no_emit = True,
+    tsconfig = ":tsconfig.json",
+    transpiler = "tsc",
+    deps = [
+        ":node_modules",
+        "//:tsconfig_base",
+        ":node_modules/bcryptjs",
+        ":node_modules/nanoid",
+        ":node_modules/otplib",
+        ":node_modules/qrcode",
+        ":node_modules/@types/bcryptjs",
+        ":node_modules/@types/node",
+        ":node_modules/@types/qrcode",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+# =============================================================================
+# Exported files for downstream consumers
+# =============================================================================
+
+exports_files(
+    [
+        "package.json",
+        "tsconfig.json",
+        "vitest.config.ts",
+    ],
+    visibility = ["//visibility:public"],
+)
