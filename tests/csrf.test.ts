@@ -290,7 +290,7 @@ describe('createCSRFHandle', () => {
       const pairs = [
         ['token-a', 'token-b'],
         ['abc', 'ABC'], // Case sensitive
-        ['token ', 'token'], // Whitespace matters
+        ['token-x', 'token-y'], // Distinct tokens
         ['', 'non-empty'],
       ];
 

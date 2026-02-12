@@ -9,13 +9,13 @@ import {
   generateTextCredentialsCard,
   maskPassword,
   escapeXml,
-} from '../src/credentials/generator.js';
+} from '../src/cred-gen/generator.js';
 import {
   generateUserCredentials,
   generateCredentialsEmailHtml,
   generateSecureCredentialsLink,
   createCredentialsDownloadResponse,
-} from '../src/credentials/helpers.js';
+} from '../src/cred-gen/helpers.js';
 
 describe('Credentials Generator', () => {
   describe('generateTextCredentialsCard', () => {
