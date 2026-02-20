@@ -3,7 +3,7 @@
  *
  * Re-exports activity tracking from core/session module.
  *
- * @module @tinyland-inc/tinyland-auth/activity
+ * @module @tummycrypt/tinyland-auth/activity
  */
 
 export {

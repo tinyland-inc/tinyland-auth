@@ -3,7 +3,7 @@
  *
  * Re-exports the core TOTP service and compatibility layer utilities.
  *
- * @module @tinyland-inc/tinyland-auth/totp
+ * @module @tummycrypt/tinyland-auth/totp
  */
 
 // Core TOTP service

@@ -4,7 +4,7 @@
  * Helper functions for integrating credentials generation.
  * Framework-agnostic: uses standard Web APIs (Response).
  *
- * @module @tinyland-inc/tinyland-auth/credentials/helpers
+ * @module @tummycrypt/tinyland-auth/credentials/helpers
  */
 
 import { generateTextCredentialsCard, type CredentialsCardData } from './generator.js';

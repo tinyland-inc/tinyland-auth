@@ -9,7 +9,7 @@
  * and is NOT included in this package to avoid the heavy native dependency.
  * Only the text-based card generator and helper utilities are provided.
  *
- * @module @tinyland-inc/tinyland-auth/credentials
+ * @module @tummycrypt/tinyland-auth/credentials
  */
 
 export {

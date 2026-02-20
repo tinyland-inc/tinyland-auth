@@ -1,5 +1,5 @@
 {
-  "name": "@tinyland-inc/tinyland-auth",
+  "name": "@tummycrypt/tinyland-auth",
   "version": "0.1.0",
   "description": "Production-grade authentication system with TOTP, RBAC, and pluggable storage",
   "type": "module",
@@ -69,7 +69,8 @@
   "license": "Zlib AND LicenseRef-Tinyland-Proprietary",
   "repository": {
     "type": "git",
-    "url": "https://gitlab.com/tinyland-inc/tinyland-auth"
+    "url": "https://gitlab.com/tinyland/projects/tinyland.dev.git",
+    "directory": "packages/tinyland-auth"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
@@ -99,6 +100,10 @@
     }
   },
   "engines": {
-    "node": ">=18.0.0"
+    "node": ">=22.0.0"
+  },
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org/",
+    "access": "public"
   }
 }

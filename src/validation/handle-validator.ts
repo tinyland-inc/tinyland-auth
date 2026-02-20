@@ -5,7 +5,7 @@
  * Uses dependency injection for storage and password hashing,
  * rather than direct file system access.
  *
- * @module @tinyland-inc/tinyland-auth/validation/handle-validator
+ * @module @tummycrypt/tinyland-auth/validation/handle-validator
  */
 
 import { verifyPassword, hashPassword } from '../core/security/password.js';

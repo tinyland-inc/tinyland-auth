@@ -3,7 +3,7 @@
  *
  * Re-exports the audit logger from modules/audit.
  *
- * @module @tinyland-inc/tinyland-auth/audit
+ * @module @tummycrypt/tinyland-auth/audit
  */
 
 export {

@@ -4,7 +4,7 @@
  * Provides the old totp.ts API as standalone utility functions.
  * These are framework-agnostic and do not depend on $lib or singletons.
  *
- * @module @tinyland-inc/tinyland-auth/totp/compat
+ * @module @tummycrypt/tinyland-auth/totp/compat
  */
 
 import { authenticator } from 'otplib';

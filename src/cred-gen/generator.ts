@@ -5,7 +5,7 @@
  * The image-based generator (which depends on `sharp`) is intentionally
  * excluded to avoid heavy native dependencies in this package.
  *
- * @module @tinyland-inc/tinyland-auth/credentials/generator
+ * @module @tummycrypt/tinyland-auth/credentials/generator
  */
 
 export interface CredentialsCardData {

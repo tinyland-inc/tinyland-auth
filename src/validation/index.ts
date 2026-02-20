@@ -3,7 +3,7 @@
  *
  * Handle validation, mTLS certificate checking, and other validators.
  *
- * @module @tinyland-inc/tinyland-auth/validation
+ * @module @tummycrypt/tinyland-auth/validation
  */
 
 // Handle validation
