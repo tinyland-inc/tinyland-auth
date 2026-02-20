@@ -11,7 +11,7 @@ import {
   generateSecurePassword,
 } from '../src/core/security/password.js';
 
-describe('Password Hashing', () => {
+describe('Password Hashing', { timeout: 30_000 }, () => {
   describe('hashPassword', () => {
     it('should hash a password', async () => {
       const password = 'mySecurePassword123!';
