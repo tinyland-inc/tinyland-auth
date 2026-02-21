@@ -1,0 +1,108 @@
+{
+  "name": "@tinyland-inc/tinyland-auth",
+  "version": "0.1.0",
+  "description": "Production-grade authentication system with TOTP, RBAC, and pluggable storage",
+  "type": "module",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./sveltekit": {
+      "types": "./dist/adapters/sveltekit/index.d.ts",
+      "import": "./dist/adapters/sveltekit/index.js"
+    },
+    "./storage": {
+      "types": "./dist/storage/index.d.ts",
+      "import": "./dist/storage/index.js"
+    },
+    "./types": {
+      "types": "./dist/types/index.d.ts",
+      "import": "./dist/types/index.js"
+    },
+    "./totp": {
+      "types": "./dist/totp/index.d.ts",
+      "import": "./dist/totp/index.js"
+    },
+    "./activity": {
+      "types": "./dist/activity/index.d.ts",
+      "import": "./dist/activity/index.js"
+    },
+    "./audit": {
+      "types": "./dist/audit/index.d.ts",
+      "import": "./dist/audit/index.js"
+    },
+    "./cred-gen": {
+      "types": "./dist/cred-gen/index.d.ts",
+      "import": "./dist/cred-gen/index.js"
+    },
+    "./validation": {
+      "types": "./dist/validation/index.d.ts",
+      "import": "./dist/validation/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "clean": "rm -rf dist",
+    "prepublishOnly": "npm run build",
+    "test": "vitest",
+    "test:coverage": "vitest --coverage",
+    "typecheck": "tsc --noEmit"
+  },
+  "keywords": [
+    "authentication",
+    "totp",
+    "2fa",
+    "rbac",
+    "sveltekit",
+    "security"
+  ],
+  "author": "Tinyland.dev",
+  "license": "Zlib AND LicenseRef-Tinyland-Proprietary",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/tinyland-inc/tinyland-auth.git"
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "nanoid": "^5.0.7",
+    "otplib": "^12.0.1",
+    "qrcode": "^1.5.3"
+  },
+  "devDependencies": {
+    "@sveltejs/kit": "^2.0.0",
+    "@types/bcryptjs": "^2.4.6",
+    "@types/node": "^20.0.0",
+    "@types/qrcode": "^1.5.5",
+    "svelte": "^5.0.0",
+    "typescript": "^5.0.0",
+    "vitest": "^4.0.0"
+  },
+  "peerDependencies": {
+    "@sveltejs/kit": "^2.0.0",
+    "svelte": "^5.0.0"
+  },
+  "peerDependenciesMeta": {
+    "@sveltejs/kit": {
+      "optional": true
+    },
+    "svelte": {
+      "optional": true
+    }
+  },
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com",
+    "access": "restricted"
+  }
+}
