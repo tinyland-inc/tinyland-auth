@@ -9,13 +9,11 @@ Dual-mode build: works with both pnpm (standalone) and Bazel (CI/production).
 load("@aspect_rules_js//js:defs.bzl", "js_library", "js_test")
 load("@aspect_rules_js//npm:defs.bzl", "npm_package")
 load("@aspect_rules_ts//ts:defs.bzl", "ts_project")
-load("@npm//:defs.bzl", "npm_link_all_packages")
 
 # =============================================================================
 # npm link - makes node_modules available for this package
 # =============================================================================
 
-npm_link_all_packages(name = "node_modules")
 
 # =============================================================================
 # TypeScript compilation
@@ -48,15 +46,15 @@ ts_project(
     tsconfig = ":tsconfig.json",
     transpiler = "tsc",
     deps = [
-        ":node_modules",
+        "//:node_modules",
         "//:tsconfig_base",
-        ":node_modules/bcryptjs",
-        ":node_modules/nanoid",
-        ":node_modules/otplib",
-        ":node_modules/qrcode",
-        ":node_modules/@types/bcryptjs",
-        ":node_modules/@types/node",
-        ":node_modules/@types/qrcode",
+        "//:node_modules/bcryptjs",
+        "//:node_modules/nanoid",
+        "//:node_modules/otplib",
+        "//:node_modules/qrcode",
+        "//:node_modules/@types/bcryptjs",
+        "//:node_modules/@types/node",
+        "//:node_modules/@types/qrcode",
     ],
     visibility = ["//visibility:public"],
 )
@@ -95,8 +93,8 @@ ts_project(
     transpiler = "tsc",
     deps = [
         ":tinyland_auth",
-        ":node_modules",
-        ":node_modules/vitest",
+        "//:node_modules",
+        "//:node_modules/vitest",
     ],
 )
 
@@ -105,11 +103,11 @@ js_test(
     data = [
         ":tinyland_auth",
         ":tinyland_auth_test_lib",
-        ":node_modules",
-        ":node_modules/vitest",
+        "//:node_modules",
+        "//:node_modules/vitest",
         "vitest.config.ts",
     ],
-    entry_point = ":node_modules/vitest/vitest.mjs",
+    entry_point = "//:node_modules/vitest/vitest.mjs",
     args = [
         "run",
         "--reporter=verbose",
@@ -134,15 +132,15 @@ ts_project(
     tsconfig = ":tsconfig.json",
     transpiler = "tsc",
     deps = [
-        ":node_modules",
+        "//:node_modules",
         "//:tsconfig_base",
-        ":node_modules/bcryptjs",
-        ":node_modules/nanoid",
-        ":node_modules/otplib",
-        ":node_modules/qrcode",
-        ":node_modules/@types/bcryptjs",
-        ":node_modules/@types/node",
-        ":node_modules/@types/qrcode",
+        "//:node_modules/bcryptjs",
+        "//:node_modules/nanoid",
+        "//:node_modules/otplib",
+        "//:node_modules/qrcode",
+        "//:node_modules/@types/bcryptjs",
+        "//:node_modules/@types/node",
+        "//:node_modules/@types/qrcode",
     ],
     visibility = ["//visibility:public"],
 )
