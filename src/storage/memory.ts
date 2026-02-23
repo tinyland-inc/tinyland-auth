@@ -1,11 +1,11 @@
-/**
- * In-Memory Storage Adapter
- *
- * A simple in-memory storage implementation for testing and development.
- * Data is lost when the process ends.
- *
- * @module @tinyland/auth/storage/memory
- */
+
+
+
+
+
+
+
+
 
 import { randomUUID } from 'crypto';
 import type {
@@ -24,8 +24,8 @@ import type {
 
 export class MemoryStorageAdapter implements IStorageAdapter {
   private users = new Map<string, AdminUser>();
-  private usersByHandle = new Map<string, string>(); // handle -> id
-  private usersByEmail = new Map<string, string>(); // email -> id
+  private usersByHandle = new Map<string, string>(); 
+  private usersByEmail = new Map<string, string>(); 
   private sessions = new Map<string, Session>();
   private totpSecrets = new Map<string, EncryptedTOTPSecret>();
   private backupCodes = new Map<string, BackupCodeSet>();
@@ -33,11 +33,11 @@ export class MemoryStorageAdapter implements IStorageAdapter {
   private auditEvents: AuditEvent[] = [];
 
   async init(): Promise<void> {
-    // No initialization needed for memory adapter
+    
   }
 
   async close(): Promise<void> {
-    // Clear all data
+    
     this.users.clear();
     this.usersByHandle.clear();
     this.usersByEmail.clear();
@@ -48,9 +48,9 @@ export class MemoryStorageAdapter implements IStorageAdapter {
     this.auditEvents = [];
   }
 
-  // ============================================================================
-  // User Operations
-  // ============================================================================
+  
+  
+  
 
   async getUser(id: string): Promise<AdminUser | null> {
     return this.users.get(id) || null;
@@ -91,7 +91,7 @@ export class MemoryStorageAdapter implements IStorageAdapter {
       throw new Error(`User ${id} not found`);
     }
 
-    // Handle handle/email index updates
+    
     if (updates.handle && updates.handle !== user.handle) {
       this.usersByHandle.delete(user.handle.toLowerCase());
       this.usersByHandle.set(updates.handle.toLowerCase(), id);
@@ -106,7 +106,7 @@ export class MemoryStorageAdapter implements IStorageAdapter {
     const updatedUser: AdminUser = {
       ...user,
       ...updates,
-      id, // Ensure ID is not changed
+      id, 
       updatedAt: new Date().toISOString(),
     };
 
@@ -124,7 +124,7 @@ export class MemoryStorageAdapter implements IStorageAdapter {
       this.usersByEmail.delete(user.email.toLowerCase());
     }
 
-    // Clean up related data
+    
     await this.deleteUserSessions(id);
     await this.deleteTOTPSecret(user.handle);
     await this.deleteBackupCodes(id);
@@ -136,15 +136,15 @@ export class MemoryStorageAdapter implements IStorageAdapter {
     return this.users.size > 0;
   }
 
-  // ============================================================================
-  // Session Operations
-  // ============================================================================
+  
+  
+  
 
   async getSession(id: string): Promise<Session | null> {
     const session = this.sessions.get(id);
     if (!session) return null;
 
-    // Check expiration
+    
     if (new Date(session.expires) < new Date()) {
       this.sessions.delete(id);
       return null;
@@ -170,7 +170,7 @@ export class MemoryStorageAdapter implements IStorageAdapter {
   ): Promise<Session> {
     const id = randomUUID();
     const now = new Date();
-    const expires = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000); // 7 days
+    const expires = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000); 
 
     const session: Session = {
       id,
@@ -207,7 +207,7 @@ export class MemoryStorageAdapter implements IStorageAdapter {
     const updatedSession: Session = {
       ...session,
       ...updates,
-      id, // Ensure ID is not changed
+      id, 
     };
 
     this.sessions.set(id, updatedSession);
@@ -241,9 +241,9 @@ export class MemoryStorageAdapter implements IStorageAdapter {
     return count;
   }
 
-  // ============================================================================
-  // TOTP Operations
-  // ============================================================================
+  
+  
+  
 
   async getTOTPSecret(handle: string): Promise<EncryptedTOTPSecret | null> {
     return this.totpSecrets.get(handle.toLowerCase()) || null;
@@ -257,9 +257,9 @@ export class MemoryStorageAdapter implements IStorageAdapter {
     return this.totpSecrets.delete(handle.toLowerCase());
   }
 
-  // ============================================================================
-  // Backup Code Operations
-  // ============================================================================
+  
+  
+  
 
   async getBackupCodes(userId: string): Promise<BackupCodeSet | null> {
     return this.backupCodes.get(userId) || null;
@@ -273,15 +273,15 @@ export class MemoryStorageAdapter implements IStorageAdapter {
     return this.backupCodes.delete(userId);
   }
 
-  // ============================================================================
-  // Invitation Operations
-  // ============================================================================
+  
+  
+  
 
   async getInvitation(token: string): Promise<AdminInvitation | null> {
     const invitation = this.invitations.get(token);
     if (!invitation) return null;
 
-    // Check expiration
+    
     if (new Date(invitation.expiresAt) < new Date()) {
       return null;
     }
@@ -347,9 +347,9 @@ export class MemoryStorageAdapter implements IStorageAdapter {
     return count;
   }
 
-  // ============================================================================
-  // Audit Operations
-  // ============================================================================
+  
+  
+  
 
   async logAuditEvent(event: Omit<AuditEvent, 'id'>): Promise<AuditEvent> {
     const id = `evt_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
@@ -357,7 +357,7 @@ export class MemoryStorageAdapter implements IStorageAdapter {
 
     this.auditEvents.push(auditEvent);
 
-    // Keep only last 10000 events
+    
     if (this.auditEvents.length > 10000) {
       this.auditEvents = this.auditEvents.slice(-10000);
     }

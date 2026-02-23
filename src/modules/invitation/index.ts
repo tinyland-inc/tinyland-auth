@@ -1,10 +1,10 @@
-/**
- * Invitation Service Module
- *
- * Manages admin user invitations with token-based flow.
- *
- * @module @tinyland/auth/modules/invitation
- */
+
+
+
+
+
+
+
 
 import { randomBytes } from 'crypto';
 import { authenticator } from 'otplib';
@@ -14,28 +14,28 @@ import type { IStorageAdapter } from '../../storage/interface.js';
 import { canManageRole } from '../../core/permissions/index.js';
 
 export interface InvitationServiceConfig {
-  /** Storage adapter */
+  
   storage: IStorageAdapter;
-  /** Invitation configuration */
+  
   config: InvitationConfig;
-  /** Base URL for invitation links */
+  
   baseUrl: string;
-  /** TOTP issuer name */
+  
   totpIssuer?: string;
 }
 
 export interface CreateInvitationOptions {
-  /** Role for the invited user */
+  
   role: AdminRole;
-  /** ID of the user creating the invitation */
+  
   createdBy: string;
-  /** Handle of the user creating the invitation */
+  
   createdByHandle: string;
-  /** Custom expiry in hours */
+  
   expiresInHours?: number;
-  /** Optional message for the invitee */
+  
   message?: string;
-  /** Optional email for reference */
+  
   email?: string;
 }
 
@@ -48,9 +48,9 @@ export interface CreateInvitationResult {
   error?: string;
 }
 
-/**
- * Invitation Service
- */
+
+
+
 export class InvitationService {
   private storage: IStorageAdapter;
   private config: InvitationConfig;
@@ -64,23 +64,23 @@ export class InvitationService {
     this.totpIssuer = serviceConfig.totpIssuer || 'Tinyland.dev';
   }
 
-  /**
-   * Create a new invitation
-   */
+  
+
+
   async createInvitation(options: CreateInvitationOptions): Promise<CreateInvitationResult> {
     try {
-      // Generate secure token
+      
       const token = randomBytes(32).toString('hex');
 
-      // Generate temporary TOTP secret
+      
       const totpSecret = authenticator.generateSecret();
 
-      // Calculate expiration
+      
       const expiresInHours = options.expiresInHours || this.config.defaultExpiryHours;
       const expiresAt = new Date();
       expiresAt.setHours(expiresAt.getHours() + expiresInHours);
 
-      // Create invitation object
+      
       const invitationData: Omit<AdminInvitation, 'id'> = {
         token,
         email: options.email || '',
@@ -96,10 +96,10 @@ export class InvitationService {
         },
       };
 
-      // Save to storage
+      
       const invitation = await this.storage.createInvitation(invitationData);
 
-      // Generate QR code
+      
       const otpauth = authenticator.keyuri(
         `invite-${invitation.id}`,
         `${this.totpIssuer} (Invite)`,
@@ -107,7 +107,7 @@ export class InvitationService {
       );
       const qrCode = await qrcode.toDataURL(otpauth);
 
-      // Build invitation URL
+      
       const inviteUrl = `${this.baseUrl}/admin/accept-invite?token=${token}`;
 
       return {
@@ -126,20 +126,20 @@ export class InvitationService {
     }
   }
 
-  /**
-   * Get invitation by token
-   */
+  
+
+
   async getInvitation(token: string): Promise<AdminInvitation | null> {
     const invitation = await this.storage.getInvitation(token);
 
     if (!invitation) return null;
 
-    // Check expiration
+    
     if (new Date(invitation.expiresAt) < new Date()) {
       return null;
     }
 
-    // Check if already used
+    
     if (invitation.usedAt) {
       return null;
     }
@@ -147,9 +147,9 @@ export class InvitationService {
     return invitation;
   }
 
-  /**
-   * Mark invitation as used
-   */
+  
+
+
   async markAsUsed(token: string, usedBy: string): Promise<boolean> {
     try {
       await this.storage.updateInvitation(token, {
@@ -163,23 +163,23 @@ export class InvitationService {
     }
   }
 
-  /**
-   * Revoke an invitation
-   */
+  
+
+
   async revokeInvitation(token: string): Promise<boolean> {
     return this.storage.deleteInvitation(token);
   }
 
-  /**
-   * List pending invitations
-   */
+  
+
+
   async listPendingInvitations(): Promise<AdminInvitation[]> {
     return this.storage.getPendingInvitations();
   }
 
-  /**
-   * Get invitation statistics
-   */
+  
+
+
   async getStatistics(): Promise<{
     total: number;
     pending: number;
@@ -197,16 +197,16 @@ export class InvitationService {
     };
   }
 
-  /**
-   * Clean up expired invitations
-   */
+  
+
+
   async cleanupExpired(): Promise<number> {
     return this.storage.cleanupExpiredInvitations();
   }
 
-  /**
-   * Extend invitation expiry
-   */
+  
+
+
   async extendInvitation(token: string, additionalHours: number): Promise<boolean> {
     const invitation = await this.storage.getInvitation(token);
     if (!invitation || invitation.usedAt) return false;
@@ -224,17 +224,17 @@ export class InvitationService {
     }
   }
 
-  /**
-   * Validate if creator can invite for target role
-   */
+  
+
+
   canInviteForRole(creatorRole: AdminRole, targetRole: AdminRole): boolean {
     return canManageRole(creatorRole, targetRole);
   }
 }
 
-/**
- * Create invitation service instance
- */
+
+
+
 export function createInvitationService(config: InvitationServiceConfig): InvitationService {
   return new InvitationService(config);
 }

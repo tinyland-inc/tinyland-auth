@@ -1,10 +1,10 @@
-/**
- * SvelteKit mTLS Adapter
- *
- * Wraps the core mTLS functions to extract headers from SvelteKit RequestEvent.
- *
- * @module @tinyland/auth/sveltekit
- */
+
+
+
+
+
+
+
 
 import type { RequestEvent } from '@sveltejs/kit';
 import {
@@ -15,12 +15,12 @@ import {
   type MTLSOptions,
 } from '../../core/security/mtls.js';
 
-// Re-export core types
+
 export type { CertificateHeaders, CertificateInfo, MTLSOptions };
 
-/**
- * Extract headers relevant to mTLS from a SvelteKit RequestEvent.
- */
+
+
+
 function extractHeadersFromEvent(event: RequestEvent): CertificateHeaders {
   return {
     clientCert:
@@ -40,9 +40,9 @@ function extractHeadersFromEvent(event: RequestEvent): CertificateHeaders {
   };
 }
 
-/**
- * Detect if running in development mode from the SvelteKit event.
- */
+
+
+
 function detectDevelopment(event: RequestEvent): boolean {
   return (
     process.env.NODE_ENV === 'development' ||
@@ -53,9 +53,9 @@ function detectDevelopment(event: RequestEvent): boolean {
   );
 }
 
-/**
- * Extract certificate from SvelteKit RequestEvent.
- */
+
+
+
 export function extractCertificateFromEvent(
   event: RequestEvent,
   options?: Partial<MTLSOptions>
@@ -68,11 +68,11 @@ export function extractCertificateFromEvent(
   });
 }
 
-/**
- * SvelteKit middleware to check mTLS certificate.
- * Returns true if certificate is valid, false otherwise.
- * Stores certificate info in event.locals.mTLSCert.
- */
+
+
+
+
+
 export function requireMTLS(event: RequestEvent): boolean {
   const certInfo = extractCertificateFromEvent(event);
 
@@ -84,9 +84,9 @@ export function requireMTLS(event: RequestEvent): boolean {
   return true;
 }
 
-/**
- * Get certificate fingerprint from SvelteKit RequestEvent.
- */
+
+
+
 export function getCertificateFingerprintFromEvent(
   event: RequestEvent,
   options?: Partial<MTLSOptions>

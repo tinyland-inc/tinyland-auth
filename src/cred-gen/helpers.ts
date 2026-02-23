@@ -1,11 +1,11 @@
-/**
- * Credentials Helper Utilities
- *
- * Helper functions for integrating credentials generation.
- * Framework-agnostic: uses standard Web APIs (Response).
- *
- * @module @tummycrypt/tinyland-auth/credentials/helpers
- */
+
+
+
+
+
+
+
+
 
 import { generateTextCredentialsCard, type CredentialsCardData } from './generator.js';
 import { generateTOTPSecret, generateTOTPUri, generateTempPassword } from '../totp/compat.js';
@@ -18,21 +18,21 @@ export interface UserCredentials {
   totpSecret?: string;
 }
 
-/**
- * Generate complete user credentials with TOTP setup
- */
+
+
+
 export async function generateUserCredentials(
   username: string,
   displayName: string,
   email: string,
   issuer: string = 'Tinyland.dev'
 ): Promise<UserCredentials & { credentialsText: string }> {
-  // Generate secure credentials
+  
   const tempPassword = generateTempPassword(12);
   const totpSecret = generateTOTPSecret();
   const totpUri = generateTOTPUri(totpSecret, issuer, username);
 
-  // Generate text-based credentials card
+  
   const cardData: CredentialsCardData = {
     username,
     displayName,
@@ -53,9 +53,9 @@ export async function generateUserCredentials(
   };
 }
 
-/**
- * Create a downloadable credentials response
- */
+
+
+
 export function createCredentialsDownloadResponse(
   credentialsText: string,
   username: string
@@ -74,9 +74,9 @@ export function createCredentialsDownloadResponse(
   });
 }
 
-/**
- * Email-friendly HTML template for credentials
- */
+
+
+
 export function generateCredentialsEmailHtml(
   credentials: UserCredentials,
   includeCard: boolean = false
@@ -224,16 +224,16 @@ export function generateCredentialsEmailHtml(
   `;
 }
 
-/**
- * Generate a secure share link for credentials (time-limited)
- */
+
+
+
 export function generateSecureCredentialsLink(
   credentialsId: string,
   expiresInMinutes: number = 60
 ): { url: string; expiresAt: Date } {
   const expiresAt = new Date(Date.now() + expiresInMinutes * 60 * 1000);
 
-  // Generate a time-limited token
+  
   const token = Buffer.from(JSON.stringify({
     id: credentialsId,
     exp: expiresAt.getTime(),

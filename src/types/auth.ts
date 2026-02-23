@@ -1,13 +1,13 @@
-/**
- * Core Authentication Types
- * Handle-based authentication with consistent camelCase schema
- *
- * @module @tinyland/auth/types
- */
 
-// ============================================================================
-// Role Types
-// ============================================================================
+
+
+
+
+
+
+
+
+
 
 export type AdminRole =
   | 'super_admin'
@@ -19,9 +19,9 @@ export type AdminRole =
   | 'member'
   | 'viewer';
 
-/**
- * Enum-like const object for code that uses AdminRole.SUPER_ADMIN syntax
- */
+
+
+
 export const AdminRole = {
   SUPER_ADMIN: 'super_admin' as const,
   ADMIN: 'admin' as const,
@@ -33,10 +33,10 @@ export const AdminRole = {
   VIEWER: 'viewer' as const,
 };
 
-/**
- * Role hierarchy for permission checking
- * Higher number = more permissions
- */
+
+
+
+
 export const ROLE_HIERARCHY: Record<AdminRole, number> = {
   super_admin: 100,
   admin: 90,
@@ -48,64 +48,64 @@ export const ROLE_HIERARCHY: Record<AdminRole, number> = {
   viewer: 10,
 };
 
-// ============================================================================
-// User Types
-// ============================================================================
+
+
+
 
 export interface AdminUser {
-  // Core Identity
+  
   id: string;
   handle: string;
   email: string;
   displayName?: string;
 
-  // Authentication
+  
   passwordHash: string;
   totpEnabled: boolean;
   totpSecretId?: string;
 
-  // Role & Permissions
+  
   role: AdminRole;
   permissions?: string[];
 
-  // Status Management
+  
   isActive: boolean;
   isLocked?: boolean;
   lockReason?: string;
   lockedAt?: string;
 
-  // Onboarding State
+  
   needsOnboarding: boolean;
   onboardingStep: number;
   firstLogin?: boolean;
 
-  // Timestamps
+  
   createdAt: string;
   updatedAt: string;
   lastLoginAt?: string;
   passwordChangedAt?: string;
 
-  // Profile Data
+  
   bio?: string;
   avatarUrl?: string;
   pronouns?: string;
 
-  // User Preferences
+  
   timezone?: string;
   locale?: string;
   theme?: 'light' | 'dark' | 'auto';
   emailNotifications?: boolean;
 
-  // Security Metadata
+  
   loginAttempts?: number;
   lastFailedLoginAt?: string;
   ipAddress?: string;
   userAgent?: string;
 }
 
-// ============================================================================
-// Session Types
-// ============================================================================
+
+
+
 
 export type DeviceType = 'mobile' | 'tablet' | 'desktop' | 'unknown';
 
@@ -117,7 +117,7 @@ export interface Session {
   createdAt: string;
   user?: SessionUser;
 
-  // Observability Context
+  
   clientIp: string;
   clientIpMasked?: string;
   userAgent: string;
@@ -128,7 +128,7 @@ export interface Session {
     city?: string;
   };
 
-  // Temporary data for onboarding flow
+  
   tempTotpSecret?: string;
   tempTotpExpiresAt?: string;
 }
@@ -154,9 +154,9 @@ export interface SessionMetadata {
   };
 }
 
-// ============================================================================
-// TOTP Types
-// ============================================================================
+
+
+
 
 export interface TOTPSecret {
   handle: string;
@@ -187,9 +187,9 @@ export interface EncryptedData {
   tag: string;
 }
 
-// ============================================================================
-// Backup Code Types
-// ============================================================================
+
+
+
 
 export interface BackupCode {
   id: string;
@@ -214,9 +214,9 @@ export interface EncryptedBackupCode {
   usedAt?: string;
 }
 
-// ============================================================================
-// Invitation Types
-// ============================================================================
+
+
+
 
 export interface AdminInvitation {
   id: string;
@@ -238,12 +238,12 @@ export interface AdminInvitation {
   };
 }
 
-// ============================================================================
-// Audit Types
-// ============================================================================
+
+
+
 
 export enum AuditEventType {
-  // Authentication Events
+  
   LOGIN_SUCCESS = 'LOGIN_SUCCESS',
   LOGIN_FAILURE = 'LOGIN_FAILURE',
   LOGOUT = 'LOGOUT',
@@ -251,7 +251,7 @@ export enum AuditEventType {
   SESSION_CREATED = 'SESSION_CREATED',
   SESSION_DESTROYED = 'SESSION_DESTROYED',
 
-  // TOTP Events
+  
   TOTP_ENABLED = 'TOTP_ENABLED',
   TOTP_DISABLED = 'TOTP_DISABLED',
   TOTP_SUCCESS = 'TOTP_SUCCESS',
@@ -259,7 +259,7 @@ export enum AuditEventType {
   BACKUP_CODE_USED = 'BACKUP_CODE_USED',
   BACKUP_CODES_REGENERATED = 'BACKUP_CODES_REGENERATED',
 
-  // User Management
+  
   USER_CREATED = 'USER_CREATED',
   USER_UPDATED = 'USER_UPDATED',
   USER_DELETED = 'USER_DELETED',
@@ -270,20 +270,20 @@ export enum AuditEventType {
   ACCOUNT_LOCKED = 'ACCOUNT_LOCKED',
   ACCOUNT_UNLOCKED = 'ACCOUNT_UNLOCKED',
 
-  // Invitation Events
+  
   INVITATION_CREATED = 'INVITATION_CREATED',
   INVITATION_SENT = 'INVITATION_SENT',
   INVITATION_ACCEPTED = 'INVITATION_ACCEPTED',
   INVITATION_REVOKED = 'INVITATION_REVOKED',
   INVITATION_EXPIRED = 'INVITATION_EXPIRED',
 
-  // Onboarding Events
+  
   ONBOARDING_STARTED = 'ONBOARDING_STARTED',
   ONBOARDING_STEP_COMPLETED = 'ONBOARDING_STEP_COMPLETED',
   ONBOARDING_COMPLETED = 'ONBOARDING_COMPLETED',
   ONBOARDING_SKIPPED = 'ONBOARDING_SKIPPED',
 
-  // System Events
+  
   BOOTSTRAP_INITIATED = 'BOOTSTRAP_INITIATED',
   BOOTSTRAP_COMPLETED = 'BOOTSTRAP_COMPLETED',
   SYSTEM_CONFIGURED = 'SYSTEM_CONFIGURED',
@@ -306,12 +306,12 @@ export interface AuditEvent {
   source: 'system' | 'user' | 'admin';
 }
 
-// ============================================================================
-// Error Types
-// ============================================================================
+
+
+
 
 export enum AuthErrorCode {
-  // General Authentication
+  
   INVALID_CREDENTIALS = 'INVALID_CREDENTIALS',
   ACCOUNT_NOT_FOUND = 'ACCOUNT_NOT_FOUND',
   ACCOUNT_INACTIVE = 'ACCOUNT_INACTIVE',
@@ -319,38 +319,38 @@ export enum AuthErrorCode {
   SESSION_EXPIRED = 'SESSION_EXPIRED',
   SESSION_INVALID = 'SESSION_INVALID',
 
-  // TOTP & 2FA
+  
   TOTP_REQUIRED = 'TOTP_REQUIRED',
   TOTP_INVALID = 'TOTP_INVALID',
   TOTP_EXPIRED = 'TOTP_EXPIRED',
   BACKUP_CODE_INVALID = 'BACKUP_CODE_INVALID',
   BACKUP_CODE_EXHAUSTED = 'BACKUP_CODE_EXHAUSTED',
 
-  // Rate Limiting & Security
+  
   TOO_MANY_ATTEMPTS = 'TOO_MANY_ATTEMPTS',
   SUSPICIOUS_ACTIVITY = 'SUSPICIOUS_ACTIVITY',
   IP_BLOCKED = 'IP_BLOCKED',
   DEVICE_NOT_RECOGNIZED = 'DEVICE_NOT_RECOGNIZED',
 
-  // User Management
+  
   HANDLE_TAKEN = 'HANDLE_TAKEN',
   HANDLE_INVALID = 'HANDLE_INVALID',
   EMAIL_TAKEN = 'EMAIL_TAKEN',
   PASSWORD_TOO_WEAK = 'PASSWORD_TOO_WEAK',
   INSUFFICIENT_PERMISSIONS = 'INSUFFICIENT_PERMISSIONS',
 
-  // Invitations
+  
   INVITATION_INVALID = 'INVITATION_INVALID',
   INVITATION_EXPIRED = 'INVITATION_EXPIRED',
   INVITATION_USED = 'INVITATION_USED',
   INVITATION_REVOKED = 'INVITATION_REVOKED',
 
-  // Onboarding
+  
   ONBOARDING_REQUIRED = 'ONBOARDING_REQUIRED',
   ONBOARDING_STEP_INCOMPLETE = 'ONBOARDING_STEP_INCOMPLETE',
   ONBOARDING_INVALID_STEP = 'ONBOARDING_INVALID_STEP',
 
-  // System
+  
   SYSTEM_NOT_CONFIGURED = 'SYSTEM_NOT_CONFIGURED',
   BOOTSTRAP_NOT_ALLOWED = 'BOOTSTRAP_NOT_ALLOWED',
   MAINTENANCE_MODE = 'MAINTENANCE_MODE',
@@ -365,9 +365,9 @@ export interface AuthError {
   requestId?: string;
 }
 
-// ============================================================================
-// Type Guards
-// ============================================================================
+
+
+
 
 export function isAdminUser(obj: unknown): obj is AdminUser {
   return (

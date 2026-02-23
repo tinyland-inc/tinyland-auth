@@ -1,36 +1,36 @@
-/**
- * @tinyland/auth - Production-grade authentication system
- *
- * Features:
- * - TOTP with AES-256-GCM encryption
- * - 8-tier role-based access control (RBAC)
- * - Pluggable storage backends
- * - Session management with observability
- * - Backup code recovery
- * - Invitation flow
- * - Audit logging
- *
- * @example
- * ```typescript
- * import {
- *   createAuthConfig,
- *   createSessionManager,
- *   hasPermission,
- *   AdminRole,
- * } from '@tinyland/auth';
- *
- * // For SvelteKit:
- * import { createAuthHandle, adminGuard } from '@tinyland/auth/sveltekit';
- * ```
- *
- * @module @tinyland/auth
- */
 
-// ============================================================================
-// Types
-// ============================================================================
 
-// Value exports from types (AdminRole is both type & value, exported once here)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 export {
   AdminRole,
   ROLE_HIERARCHY,
@@ -47,7 +47,7 @@ export {
   VALIDATION_RULES,
 } from './types/index.js';
 
-// Type-only exports from types (excluding AdminRole which is already exported above)
+
 export type {
   AdminUser,
   DeviceType,
@@ -74,7 +74,7 @@ export type {
   SecurityConfig,
   AdminPermission,
   ContentVisibility,
-  // API Contract Types
+  
   BootstrapRequest,
   BootstrapResponse,
   BootstrapVerificationRequest,
@@ -120,12 +120,12 @@ export type {
   UserDeleteResponse,
 } from './types/index.js';
 
-// ============================================================================
-// Core - Permissions
-// ============================================================================
+
+
+
 
 export {
-  // Core permission functions
+  
   getRolePermissions,
   hasPermission,
   hasAnyPermission,
@@ -138,7 +138,7 @@ export {
   isValidPermission,
   getPermissionDisplayName,
 
-  // Resource-specific permissions
+  
   canViewPosts,
   canCreatePosts,
   canEditPosts,
@@ -159,7 +159,7 @@ export {
   canEditVideos,
   canDeleteVideos,
 
-  // Member-specific permissions
+  
   canCreatePublicContent,
   canCreateMemberOnlyContent,
   canFeatureProfile,
@@ -171,11 +171,11 @@ export {
   canViewMemberOnlyContent,
   getAllowedVisibilityOptions,
 
-  // Content visibility
+  
   canViewContent,
   filterContentByVisibility,
 
-  // Content ownership
+  
   isContentOwner,
   canEditOwnedContent,
   canDeleteOwnedContent,
@@ -187,9 +187,9 @@ export {
   type OwnershipError,
 } from './core/permissions/index.js';
 
-// ============================================================================
-// Core - Security
-// ============================================================================
+
+
+
 
 export {
   constantTimeCompare,
@@ -203,14 +203,14 @@ export {
   type PasswordPolicy,
   TimingMetrics,
   timingMetrics,
-  // Password hashing
+  
   hashPassword,
   verifyPassword,
   needsRehash,
   getHashRounds,
   generateSecurePassword,
   type PasswordHashConfig,
-  // mTLS
+  
   extractCertificate,
   getCertificateFingerprint,
   type CertificateHeaders,
@@ -218,9 +218,9 @@ export {
   type MTLSOptions,
 } from './core/security/index.js';
 
-// ============================================================================
-// Core - TOTP
-// ============================================================================
+
+
+
 
 export {
   TOTPService,
@@ -228,9 +228,9 @@ export {
   type TOTPServiceConfig,
 } from './core/totp/index.js';
 
-// ============================================================================
-// Core - Backup Codes
-// ============================================================================
+
+
+
 
 export {
   generateBackupCodes,
@@ -245,9 +245,9 @@ export {
   DEFAULT_BACKUP_CODES_CONFIG,
 } from './core/backup-codes/index.js';
 
-// ============================================================================
-// Core - Session
-// ============================================================================
+
+
+
 
 export {
   SessionManager,
@@ -255,16 +255,16 @@ export {
   classifyDevice,
   extractBrowserInfo,
   type SessionManagerConfig,
-  // Activity tracking
+  
   createActivityTracker,
   type ActivityTrackingConfig,
   type ActivityType,
   type ActivityEvent,
 } from './core/session/index.js';
 
-// ============================================================================
-// Storage
-// ============================================================================
+
+
+
 
 export {
   type IStorageAdapter,
@@ -276,9 +276,9 @@ export {
   type FileStorageConfig,
 } from './storage/index.js';
 
-// ============================================================================
-// Modules - Audit
-// ============================================================================
+
+
+
 
 export {
   AuditLogger,
@@ -287,9 +287,9 @@ export {
   type AuditLoggerConfig,
 } from './modules/audit/index.js';
 
-// ============================================================================
-// Modules - Invitation
-// ============================================================================
+
+
+
 
 export {
   InvitationService,
@@ -299,9 +299,9 @@ export {
   type CreateInvitationResult,
 } from './modules/invitation/index.js';
 
-// ============================================================================
-// Modules - Bootstrap
-// ============================================================================
+
+
+
 
 export {
   BootstrapService,
@@ -310,9 +310,9 @@ export {
   type BootstrapState,
 } from './modules/bootstrap/index.js';
 
-// ============================================================================
-// TOTP Compatibility Utilities
-// ============================================================================
+
+
+
 
 export {
   generateTOTPSecret,
@@ -323,9 +323,9 @@ export {
   getTOTPTimeRemaining,
 } from './totp/compat.js';
 
-// ============================================================================
-// Credentials
-// ============================================================================
+
+
+
 
 export {
   generateTextCredentialsCard,
@@ -343,9 +343,9 @@ export {
   type UserCredentials,
 } from './cred-gen/helpers.js';
 
-// ============================================================================
-// Validation
-// ============================================================================
+
+
+
 
 export {
   validateHandle,

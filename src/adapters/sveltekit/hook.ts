@@ -1,10 +1,10 @@
-/**
- * SvelteKit Auth Handle
- *
- * Server hook for session management.
- *
- * @module @tinyland/auth/sveltekit
- */
+
+
+
+
+
+
+
 
 import type { Handle, RequestEvent } from '@sveltejs/kit';
 import type { Session, AuthConfig, AdminUser } from '../../types/index.js';
@@ -13,33 +13,33 @@ import { getSessionIdFromCookies } from './session-cookies.js';
 import { hashIp, maskIp } from '../../core/security/index.js';
 
 export interface AuthHandleConfig {
-  /** Session manager instance */
+  
   sessionManager: SessionManager;
-  /** Auth configuration */
+  
   config: AuthConfig;
-  /** Function to load user by ID */
+  
   loadUser?: (userId: string) => Promise<AdminUser | null>;
-  /** Public routes that don't require auth */
+  
   publicRoutes?: string[];
-  /** Routes to skip auth check entirely */
+  
   skipRoutes?: string[];
 }
 
-/**
- * Create auth handle for SvelteKit
- *
- * @example
- * ```typescript
- * // src/hooks.server.ts
- * import { createAuthHandle } from '@tinyland/auth/sveltekit';
- *
- * export const handle = createAuthHandle({
- *   sessionManager,
- *   config: authConfig,
- *   loadUser: async (userId) => userService.getUser(userId),
- * });
- * ```
- */
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 export function createAuthHandle(handleConfig: AuthHandleConfig): Handle {
   const {
     sessionManager,
@@ -49,13 +49,13 @@ export function createAuthHandle(handleConfig: AuthHandleConfig): Handle {
   } = handleConfig;
 
   return async ({ event, resolve }) => {
-    // Skip auth for certain routes
+    
     const path = event.url.pathname;
     if (skipRoutes.some(route => path.startsWith(route))) {
       return resolve(event);
     }
 
-    // Get session from cookie
+    
     const sessionId = getSessionIdFromCookies(event.cookies, config.session.cookieName);
 
     let session: Session | null = null;
@@ -65,23 +65,23 @@ export function createAuthHandle(handleConfig: AuthHandleConfig): Handle {
       session = await sessionManager.getSession(sessionId);
 
       if (session) {
-        // Load full user if loader provided
+        
         if (loadUser && session.userId) {
           user = await loadUser(session.userId);
         }
 
-        // Check if session should be renewed
+        
         if (sessionManager.shouldRenewSession(session)) {
           session = await sessionManager.refreshSession(sessionId);
         }
       }
     }
 
-    // Add to locals
+    
     (event.locals as unknown as { session: Session | null }).session = session;
     (event.locals as unknown as { user: AdminUser | null }).user = user;
 
-    // Add request metadata to locals for logging
+    
     const clientIp = getClientIp(event);
     (event.locals as unknown as { clientIp: string }).clientIp = hashIp(clientIp);
     (event.locals as unknown as { clientIpMasked: string }).clientIpMasked = maskIp(clientIp);
@@ -91,9 +91,9 @@ export function createAuthHandle(handleConfig: AuthHandleConfig): Handle {
   };
 }
 
-/**
- * Create sequence of handles
- */
+
+
+
 export function sequence(...handles: Handle[]): Handle {
   return async ({ event, resolve }) => {
     let resolveNext = resolve;
@@ -108,11 +108,11 @@ export function sequence(...handles: Handle[]): Handle {
   };
 }
 
-/**
- * Get client IP address from request
- */
+
+
+
 export function getClientIp(event: RequestEvent): string {
-  // Check common proxy headers
+  
   const forwardedFor = event.request.headers.get('x-forwarded-for');
   if (forwardedFor) {
     const ips = forwardedFor.split(',').map(ip => ip.trim());
@@ -131,13 +131,13 @@ export function getClientIp(event: RequestEvent): string {
     return cfConnectingIp;
   }
 
-  // Fall back to connection address
+  
   return event.getClientAddress?.() || '0.0.0.0';
 }
 
-/**
- * CSRF protection handle
- */
+
+
+
 export function createCSRFHandle(config: {
   tokenHeader?: string;
   tokenCookie?: string;
@@ -155,12 +155,12 @@ export function createCSRFHandle(config: {
     const method = event.request.method;
     const path = event.url.pathname;
 
-    // Skip for safe methods and specified routes
+    
     if (skipMethods.includes(method) || skipRoutes.some(r => path.startsWith(r))) {
       return resolve(event);
     }
 
-    // Validate CSRF token
+    
     const headerToken = event.request.headers.get(tokenHeader);
     const cookieToken = event.cookies.get(tokenCookie);
 

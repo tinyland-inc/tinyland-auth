@@ -1,12 +1,12 @@
-/**
- * Credentials Card Generator
- *
- * Text-based credential card generation.
- * The image-based generator (which depends on `sharp`) is intentionally
- * excluded to avoid heavy native dependencies in this package.
- *
- * @module @tummycrypt/tinyland-auth/credentials/generator
- */
+
+
+
+
+
+
+
+
+
 
 export interface CredentialsCardData {
   username: string;
@@ -26,9 +26,9 @@ export interface CardDesignOptions {
   fontFamily?: string;
 }
 
-/**
- * Generate a simplified text-based credentials card
- */
+
+
+
 export function generateTextCredentialsCard(
   data: CredentialsCardData
 ): string {
@@ -75,9 +75,9 @@ ${border}
 `;
 }
 
-/**
- * Mask password for display (show first and last characters)
- */
+
+
+
 export function maskPassword(password: string): string {
   if (password.length <= 4) {
     return '--------';
@@ -90,9 +90,9 @@ export function maskPassword(password: string): string {
   return `${first}${masked}${last}`;
 }
 
-/**
- * Escape special XML characters
- */
+
+
+
 export function escapeXml(text: string): string {
   return text
     .replace(/&/g, '&amp;')

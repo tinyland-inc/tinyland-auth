@@ -1,10 +1,10 @@
-/**
- * SvelteKit Ownership Guards
- *
- * Wraps the core ownership functions with SvelteKit error() responses.
- *
- * @module @tinyland/auth/sveltekit
- */
+
+
+
+
+
+
+
 
 import { error } from '@sveltejs/kit';
 import {
@@ -16,15 +16,15 @@ import {
   type OwnedContent,
 } from '../../core/permissions/ownership.js';
 
-// Re-export pure functions as-is (no SvelteKit dependency needed)
+
 export { isContentOwner, isSoleOwner };
 export { canEditContent as canEditOwnedContent, canDeleteContent as canDeleteOwnedContent };
 export type { OwnershipUser, OwnedContent };
 
-/**
- * Guard that throws SvelteKit 403 error if user cannot edit content.
- * Use this in +page.server.ts load functions.
- */
+
+
+
+
 export function requireContentEditPermission(
   user: OwnershipUser,
   content: OwnedContent
@@ -36,10 +36,10 @@ export function requireContentEditPermission(
   }
 }
 
-/**
- * Guard that throws SvelteKit 403 error if user cannot delete content.
- * Use this in +page.server.ts action functions.
- */
+
+
+
+
 export function requireContentDeletePermission(
   user: OwnershipUser,
   content: OwnedContent

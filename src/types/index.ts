@@ -1,10 +1,10 @@
-/**
- * Type Definitions Export
- *
- * @module @tinyland/auth/types
- */
 
-// Auth types - AdminRole is both a type and const object, export as value
+
+
+
+
+
+
 export {
   AdminRole,
   ROLE_HIERARCHY,
@@ -16,7 +16,7 @@ export {
   hasEqualOrHigherRole,
 } from './auth.js';
 
-// Auth type-only exports
+
 export type {
   AdminUser,
   DeviceType,
@@ -35,13 +35,13 @@ export type {
   AuthError,
 } from './auth.js';
 
-// Config value exports
+
 export {
   DEFAULT_AUTH_CONFIG,
   createAuthConfig,
 } from './config.js';
 
-// Config type-only exports
+
 export type {
   AuthConfig,
   TOTPConfig,
@@ -53,39 +53,39 @@ export type {
   SecurityConfig,
 } from './config.js';
 
-// Permission value exports
+
 export {
   PERMISSIONS,
   ROLE_PERMISSIONS,
   VALIDATION_RULES,
 } from './permissions.js';
 
-// Permission type-only exports
+
 export type {
   AdminPermission,
   ContentVisibility,
 } from './permissions.js';
 
-// API contract types
+
 export type {
-  // Bootstrap
+  
   BootstrapRequest,
   BootstrapResponse,
   BootstrapVerificationRequest,
   BootstrapStatus,
-  // Login
+  
   LoginRequest,
   LoginResponse,
   LogoutRequest,
   LogoutResponse,
-  // Session
+  
   SessionInfo,
   SessionRefreshRequest,
   SessionRefreshResponse,
   SessionListResponse,
   SessionTerminateRequest,
   SessionTerminateResponse,
-  // Invitation
+  
   InvitationCreateRequest,
   InvitationCreateResponse,
   InvitationAcceptRequest,
@@ -93,14 +93,14 @@ export type {
   InvitationListResponse,
   InvitationRevokeRequest,
   InvitationRevokeResponse,
-  // Onboarding
+  
   OnboardingStatus,
   ProfileSetupRequest,
   SecurityReviewRequest,
   PreferencesSetupRequest,
   OnboardingStepResponse,
   OnboardingSkipRequest,
-  // TOTP
+  
   TOTPSetupRequest,
   TOTPSetupResponse,
   TOTPDisableRequest,
@@ -109,10 +109,10 @@ export type {
   BackupCodeUsageResponse,
   BackupCodesRegenerateRequest,
   BackupCodesRegenerateResponse,
-  // Password
+  
   PasswordChangeRequest,
   PasswordChangeResponse,
-  // User Management
+  
   UserListRequest,
   UserListResponse,
   UserUpdateRequest,

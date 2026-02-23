@@ -1,10 +1,10 @@
-/**
- * Session Manager
- *
- * Framework-agnostic session management with observability metadata.
- *
- * @module @tinyland/auth/core/session
- */
+
+
+
+
+
+
+
 
 import type { Session, SessionMetadata, SessionUser, AdminUser, SessionConfig } from '../../types/index.js';
 import type { IStorageAdapter } from '../../storage/interface.js';
@@ -23,31 +23,31 @@ export class SessionManager {
     this.config = config;
   }
 
-  /**
-   * Create a new session
-   */
+  
+
+
   async createSession(
     userId: string,
     user: Partial<AdminUser>,
     metadata?: SessionMetadata
   ): Promise<Session> {
-    // Remove existing sessions for user (single session strategy)
+    
     await this.storage.deleteUserSessions(userId);
 
     const session = await this.storage.createSession(userId, user, metadata);
     return session;
   }
 
-  /**
-   * Get a session by ID
-   */
+  
+
+
   async getSession(sessionId: string): Promise<Session | null> {
     if (!sessionId) return null;
 
     const session = await this.storage.getSession(sessionId);
     if (!session) return null;
 
-    // Check if expired
+    
     if (new Date(session.expires) < new Date()) {
       await this.storage.deleteSession(sessionId);
       return null;
@@ -56,23 +56,23 @@ export class SessionManager {
     return session;
   }
 
-  /**
-   * Validate a session
-   */
+  
+
+
   async validateSession(sessionId: string): Promise<Session | null> {
     return this.getSession(sessionId);
   }
 
-  /**
-   * Update session data
-   */
+  
+
+
   async updateSession(sessionId: string, updates: Partial<Session>): Promise<Session> {
     return this.storage.updateSession(sessionId, updates);
   }
 
-  /**
-   * Update user data in session
-   */
+  
+
+
   async updateSessionUser(sessionId: string, userData: Partial<SessionUser>): Promise<boolean> {
     const session = await this.getSession(sessionId);
     if (!session) return false;
@@ -87,9 +87,9 @@ export class SessionManager {
     return true;
   }
 
-  /**
-   * Refresh session expiry
-   */
+  
+
+
   async refreshSession(sessionId: string): Promise<Session | null> {
     const session = await this.getSession(sessionId);
     if (!session) return null;
@@ -103,37 +103,37 @@ export class SessionManager {
     });
   }
 
-  /**
-   * Remove a session
-   */
+  
+
+
   async removeSession(sessionId: string): Promise<boolean> {
     return this.storage.deleteSession(sessionId);
   }
 
-  /**
-   * Remove all sessions for a user
-   */
+  
+
+
   async removeUserSessions(userId: string): Promise<number> {
     return this.storage.deleteUserSessions(userId);
   }
 
-  /**
-   * Clean up expired sessions
-   */
+  
+
+
   async cleanupExpiredSessions(): Promise<number> {
     return this.storage.cleanupExpiredSessions();
   }
 
-  /**
-   * Get all sessions for a user
-   */
+  
+
+
   async getUserSessions(userId: string): Promise<Session[]> {
     return this.storage.getSessionsByUser(userId);
   }
 
-  /**
-   * Check if session should be renewed
-   */
+  
+
+
   shouldRenewSession(session: Session): boolean {
     const expires = new Date(session.expires);
     const now = new Date();
@@ -141,18 +141,18 @@ export class SessionManager {
     return remaining < this.config.renewThreshold;
   }
 
-  /**
-   * Check if session is valid
-   */
+  
+
+
   isSessionValid(session: Session | null): session is Session {
     if (!session) return false;
     return new Date(session.expires) > new Date();
   }
 }
 
-/**
- * Create a session manager instance
- */
+
+
+
 export function createSessionManager(
   storage: IStorageAdapter,
   config: SessionConfig
@@ -160,14 +160,14 @@ export function createSessionManager(
   return new SessionManager({ storage, config });
 }
 
-/**
- * Classify device type from user agent
- */
+
+
+
 export function classifyDevice(userAgent: string): 'mobile' | 'tablet' | 'desktop' | 'unknown' {
   const ua = userAgent.toLowerCase();
 
   if (/mobile|android|iphone|ipod|blackberry|opera mini|iemobile/i.test(ua)) {
-    // Check for tablet patterns
+    
     if (/tablet|ipad|android(?!.*mobile)/i.test(ua)) {
       return 'tablet';
     }
@@ -185,12 +185,12 @@ export function classifyDevice(userAgent: string): 'mobile' | 'tablet' | 'deskto
   return 'unknown';
 }
 
-/**
- * Extract browser info from user agent
- */
-// ============================================================================
-// Activity Tracking
-// ============================================================================
+
+
+
+
+
+
 
 export {
   createActivityTracker,
@@ -199,23 +199,23 @@ export {
   type ActivityEvent,
 } from './activity-tracking.js';
 
-/**
- * Extract browser info from user agent
- */
+
+
+
 export function extractBrowserInfo(userAgent: string): { browser: string; platform: string } {
   const ua = userAgent.toLowerCase();
 
   let browser = 'Unknown';
   let platform = 'Unknown';
 
-  // Detect browser
+  
   if (ua.includes('firefox')) browser = 'Firefox';
   else if (ua.includes('edg')) browser = 'Edge';
   else if (ua.includes('chrome')) browser = 'Chrome';
   else if (ua.includes('safari')) browser = 'Safari';
   else if (ua.includes('opera')) browser = 'Opera';
 
-  // Detect platform
+  
   if (ua.includes('windows')) platform = 'Windows';
   else if (ua.includes('mac')) platform = 'macOS';
   else if (ua.includes('linux')) platform = 'Linux';

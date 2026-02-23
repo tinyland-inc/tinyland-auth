@@ -1,14 +1,14 @@
-/**
- * Permission Types and Constants
- *
- * @module @tinyland/auth/types/permissions
- */
+
+
+
+
+
 
 import type { AdminRole } from './auth.js';
 
-/**
- * Permission type for validation
- */
+
+
+
 export type AdminPermission =
   | 'admin.access'
   | 'admin.users.view'
@@ -28,9 +28,9 @@ export type AdminPermission =
   | 'admin.logs.view'
   | 'admin.logs.export';
 
-/**
- * Permission definitions
- */
+
+
+
 export const PERMISSIONS = {
   ADMIN_ACCESS: 'admin.access',
   ADMIN_USERS_VIEW: 'admin.users.view',
@@ -51,9 +51,9 @@ export const PERMISSIONS = {
   ADMIN_LOGS_EXPORT: 'admin.logs.export',
 } as const;
 
-/**
- * Role-based permission presets
- */
+
+
+
 export const ROLE_PERMISSIONS: Record<AdminRole, string[]> = {
   super_admin: Object.values(PERMISSIONS),
 
@@ -110,14 +110,14 @@ export const ROLE_PERMISSIONS: Record<AdminRole, string[]> = {
   ],
 };
 
-/**
- * Content visibility levels
- */
+
+
+
 export type ContentVisibility = 'public' | 'members' | 'admin' | 'private';
 
-/**
- * Validation rules for user input
- */
+
+
+
 export const VALIDATION_RULES = {
   username: {
     pattern: /^[a-zA-Z0-9_-]{3,20}$/,

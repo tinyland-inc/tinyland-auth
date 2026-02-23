@@ -1,11 +1,11 @@
-/**
- * File Storage Adapter
- *
- * Backward-compatible file-based storage for tinyland.dev.
- * Reads/writes JSON files to content/auth/ directory.
- *
- * @module @tinyland/auth/storage/file
- */
+
+
+
+
+
+
+
+
 
 import { promises as fs } from 'fs';
 import path from 'path';
@@ -22,39 +22,39 @@ import type {
 } from '../types/index.js';
 
 export interface FileStorageConfig extends StorageAdapterConfig {
-  /** Base directory for auth data (default: content/auth) */
+  
   authDir: string;
-  /** Directory for TOTP secrets (default: .totp-secrets) */
+  
   totpDir: string;
-  /** Session max age in milliseconds */
+  
   sessionMaxAge: number;
 }
 
 const DEFAULT_CONFIG: FileStorageConfig = {
   authDir: 'content/auth',
   totpDir: '.totp-secrets',
-  sessionMaxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+  sessionMaxAge: 7 * 24 * 60 * 60 * 1000, 
 };
 
-/**
- * File-based storage adapter
- *
- * Compatible with existing tinyland.dev file structure:
- * - content/auth/admin-users.json
- * - content/auth/sessions.json
- * - content/auth/invites.json
- * - content/auth/logs/audit.json
- * - .totp-secrets/{handle}.json
- * - .totp-secrets/backup-codes/{userId}.json
- *
- * Features:
- * - Atomic writes using temp file + rename pattern
- * - File locking for concurrent access safety
- */
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 export class FileStorageAdapter implements IStorageAdapter {
   private config: FileStorageConfig;
   private basePath: string;
-  /** In-memory lock map to prevent concurrent file access */
+  
   private locks = new Map<string, Promise<void>>();
 
   constructor(config: Partial<FileStorageConfig> = {}) {
@@ -62,12 +62,12 @@ export class FileStorageAdapter implements IStorageAdapter {
     this.basePath = process.cwd();
   }
 
-  // ============================================================================
-  // Lifecycle
-  // ============================================================================
+  
+  
+  
 
   async init(): Promise<void> {
-    // Ensure directories exist
+    
     await this.ensureDir(this.getPath('admin-users.json'));
     await this.ensureDir(this.getPath('sessions.json'));
     await this.ensureDir(this.getPath('invites.json'));
@@ -76,7 +76,7 @@ export class FileStorageAdapter implements IStorageAdapter {
   }
 
   async close(): Promise<void> {
-    // No-op for file-based storage
+    
   }
 
   async hasUsers(): Promise<boolean> {
@@ -88,9 +88,9 @@ export class FileStorageAdapter implements IStorageAdapter {
     return this.readJsonFile<Session[]>(this.getPath('sessions.json'), []);
   }
 
-  // ============================================================================
-  // File Helpers
-  // ============================================================================
+  
+  
+  
 
   private getPath(filename: string): string {
     return path.join(this.basePath, this.config.authDir, filename);
@@ -126,46 +126,46 @@ export class FileStorageAdapter implements IStorageAdapter {
     }
   }
 
-  /**
-   * Atomically write JSON data to a file using temp file + rename pattern.
-   * This prevents partial writes and data corruption on crash.
-   */
+  
+
+
+
   private async writeJsonFile<T>(filePath: string, data: T): Promise<void> {
     await this.withFileLock(filePath, async () => {
       await this.writeJsonFileAtomic(filePath, data);
     });
   }
 
-  /**
-   * Internal atomic write implementation using temp file + rename.
-   * The rename operation is atomic on POSIX systems.
-   */
+  
+
+
+
   private async writeJsonFileAtomic<T>(filePath: string, data: T): Promise<void> {
     await this.ensureDir(filePath);
     const tempPath = `${filePath}.${Date.now()}.${randomBytes(4).toString('hex')}.tmp`;
 
     try {
       await fs.writeFile(tempPath, JSON.stringify(data, null, 2), 'utf8');
-      await fs.rename(tempPath, filePath);  // Atomic on POSIX
+      await fs.rename(tempPath, filePath);  
     } catch (error) {
-      // Clean up temp file on failure
-      try { await fs.unlink(tempPath); } catch { /* ignore cleanup errors */ }
+      
+      try { await fs.unlink(tempPath); } catch {  }
       throw error;
     }
   }
 
-  /**
-   * Execute an operation with an exclusive lock on the given file path.
-   * Prevents race conditions when multiple operations target the same file.
-   */
+  
+
+
+
   private async withFileLock<T>(filePath: string, operation: () => Promise<T>): Promise<T> {
-    // Wait for any existing lock on this file
+    
     const existing = this.locks.get(filePath);
     if (existing) {
       await existing;
     }
 
-    // Create a new lock
+    
     let resolve: () => void;
     const lockPromise = new Promise<void>(r => { resolve = r; });
     this.locks.set(filePath, lockPromise);
@@ -178,9 +178,9 @@ export class FileStorageAdapter implements IStorageAdapter {
     }
   }
 
-  // ============================================================================
-  // User Operations
-  // ============================================================================
+  
+  
+  
 
   async getUser(id: string): Promise<AdminUser | null> {
     const users = await this.readJsonFile<AdminUser[]>(this.getPath('admin-users.json'), []);
@@ -245,9 +245,9 @@ export class FileStorageAdapter implements IStorageAdapter {
     return this.readJsonFile<AdminUser[]>(this.getPath('admin-users.json'), []);
   }
 
-  // ============================================================================
-  // Session Operations
-  // ============================================================================
+  
+  
+  
 
   async getSession(id: string): Promise<Session | null> {
     const sessions = await this.readJsonFile<Session[]>(this.getPath('sessions.json'), []);
@@ -337,9 +337,9 @@ export class FileStorageAdapter implements IStorageAdapter {
     return before - filtered.length;
   }
 
-  // ============================================================================
-  // TOTP Operations
-  // ============================================================================
+  
+  
+  
 
   async getTOTPSecret(handle: string): Promise<EncryptedTOTPSecret | null> {
     try {
@@ -366,9 +366,9 @@ export class FileStorageAdapter implements IStorageAdapter {
     }
   }
 
-  // ============================================================================
-  // Backup Codes Operations
-  // ============================================================================
+  
+  
+  
 
   async getBackupCodes(userId: string): Promise<BackupCodeSet | null> {
     try {
@@ -394,9 +394,9 @@ export class FileStorageAdapter implements IStorageAdapter {
     }
   }
 
-  // ============================================================================
-  // Invitation Operations
-  // ============================================================================
+  
+  
+  
 
   async getInvitation(token: string): Promise<AdminInvitation | null> {
     const invites = await this.readJsonFile<AdminInvitation[]>(this.getPath('invites.json'), []);
@@ -466,9 +466,9 @@ export class FileStorageAdapter implements IStorageAdapter {
     return before - filtered.length;
   }
 
-  // ============================================================================
-  // Audit Log Operations
-  // ============================================================================
+  
+  
+  
 
   async logAuditEvent(event: Omit<AuditEvent, 'id'>): Promise<AuditEvent> {
     const logPath = this.getPath('logs/audit.json');
@@ -481,7 +481,7 @@ export class FileStorageAdapter implements IStorageAdapter {
 
     events.push(auditEvent);
 
-    // Keep only last 10000 events
+    
     if (events.length > 10000) {
       events.splice(0, events.length - 10000);
     }
@@ -529,9 +529,9 @@ export class FileStorageAdapter implements IStorageAdapter {
   }
 }
 
-/**
- * Create a file storage adapter instance
- */
+
+
+
 export function createFileStorageAdapter(config?: Partial<FileStorageConfig>): FileStorageAdapter {
   return new FileStorageAdapter(config);
 }

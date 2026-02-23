@@ -1,30 +1,30 @@
-/**
- * Permission Management System
- *
- * Centralized permission management with 40+ pure functions for RBAC.
- * All functions are pure (no I/O) and can be used in any context.
- *
- * @module @tinyland/auth/core/permissions
- */
+
+
+
+
+
+
+
+
 
 import type { AdminRole, AdminUser } from '../../types/auth.js';
 import { PERMISSIONS, ROLE_PERMISSIONS, type ContentVisibility } from '../../types/permissions.js';
 
-// ============================================================================
-// Core Permission Functions
-// ============================================================================
 
-/**
- * Get default permissions for a given role
- */
+
+
+
+
+
+
 export function getRolePermissions(role: AdminRole | string): string[] {
   const normalizedRole = role as AdminRole;
   return ROLE_PERMISSIONS[normalizedRole] || [PERMISSIONS.ADMIN_ACCESS];
 }
 
-/**
- * Check if a user has a specific permission
- */
+
+
+
 export function hasPermission(user: AdminUser, permission: string): boolean {
   if (user.role === 'super_admin') {
     return true;
@@ -36,50 +36,50 @@ export function hasPermission(user: AdminUser, permission: string): boolean {
   return rolePermissions.includes(permission);
 }
 
-/**
- * Check if a user has any of the specified permissions
- */
+
+
+
 export function hasAnyPermission(user: AdminUser, permissions: string[]): boolean {
   return permissions.some(permission => hasPermission(user, permission));
 }
 
-/**
- * Check if a user has all of the specified permissions
- */
+
+
+
 export function hasAllPermissions(user: AdminUser, permissions: string[]): boolean {
   return permissions.every(permission => hasPermission(user, permission));
 }
 
-/**
- * Throws an error if user doesn't have the required permission
- */
+
+
+
 export function requirePermission(user: AdminUser, permission: string): void {
   if (!hasPermission(user, permission)) {
     throw new Error(`Permission denied: ${permission} required`);
   }
 }
 
-/**
- * Throws an error if user doesn't have any of the required permissions
- */
+
+
+
 export function requireAnyPermission(user: AdminUser, permissions: string[]): void {
   if (!hasAnyPermission(user, permissions)) {
     throw new Error(`Permission denied: one of [${permissions.join(', ')}] required`);
   }
 }
 
-/**
- * Throws an error if user doesn't have all of the required permissions
- */
+
+
+
 export function requireAllPermissions(user: AdminUser, permissions: string[]): void {
   if (!hasAllPermissions(user, permissions)) {
     throw new Error(`Permission denied: all of [${permissions.join(', ')}] required`);
   }
 }
 
-/**
- * Get all permissions for a user (combines role and explicit permissions)
- */
+
+
+
 export function getUserPermissions(user: AdminUser): string[] {
   if (user.role === 'super_admin') {
     return Object.values(PERMISSIONS);
@@ -89,9 +89,9 @@ export function getUserPermissions(user: AdminUser): string[] {
   return [...new Set([...rolePerms, ...userPerms])];
 }
 
-/**
- * Check if a role can manage another role (role hierarchy check)
- */
+
+
+
 export function canManageRole(actorRole: AdminRole | string, targetRole: AdminRole | string): boolean {
   const normalizeRole = (role: AdminRole | string): string => {
     return String(role).toLowerCase().replace(/-/g, '_');
@@ -121,16 +121,16 @@ export function canManageRole(actorRole: AdminRole | string, targetRole: AdminRo
   return actorIndex < targetIndex;
 }
 
-/**
- * Validate if a permission string is valid
- */
+
+
+
 export function isValidPermission(permission: string): boolean {
   return Object.values(PERMISSIONS).includes(permission as typeof PERMISSIONS[keyof typeof PERMISSIONS]);
 }
 
-/**
- * Get permission display name (human-readable)
- */
+
+
+
 export function getPermissionDisplayName(permission: string): string {
   const displayNames: Record<string, string> = {
     [PERMISSIONS.ADMIN_ACCESS]: 'Admin Panel Access',
@@ -154,9 +154,9 @@ export function getPermissionDisplayName(permission: string): string {
   return displayNames[permission] || permission;
 }
 
-// ============================================================================
-// Resource-Specific Permission Functions
-// ============================================================================
+
+
+
 
 const ALL_ROLES = ['super_admin', 'admin', 'editor', 'moderator', 'event_manager', 'contributor', 'member', 'viewer'];
 const CONTENT_CREATORS = ['super_admin', 'admin', 'editor', 'moderator', 'event_manager', 'contributor', 'member'];
@@ -168,7 +168,7 @@ function normalizeRole(role: AdminRole | string): string {
   return String(role).toLowerCase().replace(/-/g, '_');
 }
 
-// Posts
+
 export function canViewPosts(role: AdminRole | string): boolean {
   return ALL_ROLES.includes(normalizeRole(role));
 }
@@ -185,7 +185,7 @@ export function canDeletePosts(role: AdminRole | string): boolean {
   return ADMINS.includes(normalizeRole(role));
 }
 
-// Events
+
 export function canViewEvents(role: AdminRole | string): boolean {
   return ALL_ROLES.includes(normalizeRole(role));
 }
@@ -204,7 +204,7 @@ export function canDeleteEvents(role: AdminRole | string): boolean {
   return ADMINS.includes(normalizeRole(role));
 }
 
-// Profiles
+
 export function canViewProfiles(role: AdminRole | string): boolean {
   return ALL_ROLES.includes(normalizeRole(role));
 }
@@ -225,7 +225,7 @@ export function canDeleteProfiles(role: AdminRole | string): boolean {
   return SUPER_ADMIN.includes(normalizeRole(role));
 }
 
-// Users
+
 export function canViewUsers(role: AdminRole | string): boolean {
   const r = normalizeRole(role);
   return ['super_admin', 'admin', 'moderator'].includes(r);
@@ -235,7 +235,7 @@ export function canManageUsers(role: AdminRole | string): boolean {
   return ADMINS.includes(normalizeRole(role));
 }
 
-// Videos
+
 export function canViewVideos(role: AdminRole | string): boolean {
   return ALL_ROLES.includes(normalizeRole(role));
 }
@@ -253,9 +253,9 @@ export function canDeleteVideos(role: AdminRole | string): boolean {
   return ADMINS.includes(normalizeRole(role));
 }
 
-// ============================================================================
-// Member-Specific Permission Functions
-// ============================================================================
+
+
+
 
 export function canCreatePublicContent(role: AdminRole | string): boolean {
   const r = normalizeRole(role);
@@ -314,13 +314,13 @@ export function getAllowedVisibilityOptions(role: AdminRole | string): string[] 
   return [];
 }
 
-// ============================================================================
-// Content Visibility Filtering
-// ============================================================================
 
-/**
- * Check if a user can view content with a given visibility level
- */
+
+
+
+
+
+
 export function canViewContent(
   visibility: ContentVisibility | string | undefined,
   userRole: AdminRole | string | null | undefined,
@@ -358,9 +358,9 @@ export function canViewContent(
   return false;
 }
 
-/**
- * Filter an array of content items by visibility
- */
+
+
+
 export function filterContentByVisibility<T extends { visibility?: string; authorId?: string }>(
   items: T[],
   userRole: AdminRole | string | null | undefined,
@@ -371,9 +371,9 @@ export function filterContentByVisibility<T extends { visibility?: string; autho
   );
 }
 
-// ============================================================================
-// Content Ownership
-// ============================================================================
+
+
+
 
 export {
   isContentOwner,
@@ -387,8 +387,8 @@ export {
   type OwnershipError,
 } from './ownership.js';
 
-// ============================================================================
-// Re-exports
-// ============================================================================
+
+
+
 
 export { PERMISSIONS, ROLE_PERMISSIONS } from '../../types/permissions.js';

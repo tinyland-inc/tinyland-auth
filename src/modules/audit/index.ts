@@ -1,32 +1,32 @@
-/**
- * Audit Logger Module
- *
- * Event logging with buffering and severity tracking.
- *
- * @module @tinyland/auth/modules/audit
- */
+
+
+
+
+
+
+
 
 import type { AuditEvent, AuditEventType, AuditSeverity } from '../../types/auth.js';
 import type { IStorageAdapter, AuditEventFilters } from '../../storage/interface.js';
 
 export interface AuditLoggerConfig {
-  /** Storage adapter */
+  
   storage: IStorageAdapter;
-  /** Enable audit logging */
+  
   enabled: boolean;
-  /** Flush interval in milliseconds */
+  
   flushInterval?: number;
-  /** Maximum buffer size before auto-flush */
+  
   maxBufferSize?: number;
-  /** Custom logger for external integrations */
+  
   externalLogger?: (event: AuditEvent) => Promise<void>;
 }
 
-/**
- * Audit Logger
- *
- * Buffers audit events and flushes to storage periodically.
- */
+
+
+
+
+
 export class AuditLogger {
   private storage: IStorageAdapter;
   private enabled: boolean;
@@ -44,9 +44,9 @@ export class AuditLogger {
     this.externalLogger = config.externalLogger;
   }
 
-  /**
-   * Log an audit event
-   */
+  
+
+
   async log(
     type: AuditEventType,
     details: Record<string, unknown>,
@@ -74,10 +74,10 @@ export class AuditLogger {
       source: context?.source || 'system',
     };
 
-    // Add to buffer
+    
     this.buffer.push(event);
 
-    // Send to external logger immediately if configured
+    
     if (this.externalLogger) {
       try {
         await this.externalLogger(event as AuditEvent);
@@ -86,20 +86,20 @@ export class AuditLogger {
       }
     }
 
-    // Schedule flush if not already scheduled
+    
     if (!this.flushTimer) {
       this.flushTimer = setTimeout(() => this.flush(), this.flushInterval);
     }
 
-    // Immediate flush for critical events or if buffer is full
+    
     if (event.severity === 'critical' || this.buffer.length >= this.maxBufferSize) {
       await this.flush();
     }
   }
 
-  /**
-   * Flush buffered events to storage
-   */
+  
+
+
   async flush(): Promise<void> {
     if (this.buffer.length === 0) return;
 
@@ -117,28 +117,28 @@ export class AuditLogger {
       }
     } catch (error) {
       console.error('[AuditLogger] Failed to flush:', error);
-      // Re-add events to buffer for retry
+      
       this.buffer.unshift(...eventsToWrite);
     }
   }
 
-  /**
-   * Query audit events
-   */
+  
+
+
   async query(filters: AuditEventFilters): Promise<AuditEvent[]> {
     return this.storage.getAuditEvents(filters);
   }
 
-  /**
-   * Get recent events
-   */
+  
+
+
   async getRecentEvents(limit: number = 100): Promise<AuditEvent[]> {
     return this.storage.getRecentAuditEvents(limit);
   }
 
-  /**
-   * Get failed login attempts within time window
-   */
+  
+
+
   async getFailedLoginAttempts(
     timeWindowMs: number = 15 * 60 * 1000
   ): Promise<Map<string, number>> {
@@ -157,17 +157,17 @@ export class AuditLogger {
     return attempts;
   }
 
-  /**
-   * Close the logger
-   */
+  
+
+
   async close(): Promise<void> {
     await this.flush();
   }
 }
 
-/**
- * Get severity level for an event type
- */
+
+
+
 export function getSeverityForEventType(type: AuditEventType): AuditSeverity {
   const criticalEvents: AuditEventType[] = [
     'USER_DELETED' as AuditEventType,
@@ -187,12 +187,12 @@ export function getSeverityForEventType(type: AuditEventType): AuditSeverity {
   return 'info';
 }
 
-/**
- * Create audit logger instance
- */
+
+
+
 export function createAuditLogger(config: AuditLoggerConfig): AuditLogger {
   return new AuditLogger(config);
 }
 
-// Re-export AuditEventType for convenience
+
 export { AuditEventType } from '../../types/auth.js';

@@ -1,10 +1,10 @@
-/**
- * TOTP Service
- *
- * AES-256-GCM encrypted TOTP with timing-safe verification.
- *
- * @module @tinyland/auth/core/totp
- */
+
+
+
+
+
+
+
 
 import { authenticator } from 'otplib';
 import * as qrcode from 'qrcode';
@@ -12,23 +12,23 @@ import { createCipheriv, createDecipheriv, randomBytes, scryptSync } from 'crypt
 import type { TOTPSecret, EncryptedData, TOTPConfig } from '../../types/index.js';
 import { timingSafeVerify } from '../security/index.js';
 
-// Configure authenticator with time window for clock drift tolerance
+
 authenticator.options = { window: 1 };
 
-// Encryption constants
+
 const ALGORITHM = 'aes-256-gcm';
 const SALT_LENGTH = 32;
 const IV_LENGTH = 16;
 const KEY_LENGTH = 32;
 
 export interface TOTPServiceConfig {
-  /** Encryption key for TOTP secrets */
+  
   encryptionKey: string;
-  /** Issuer name for authenticator apps */
+  
   issuer: string;
-  /** Development mode (allows test codes) */
+  
   devMode?: boolean;
-  /** Test code for development */
+  
   testCode?: string;
 }
 
@@ -45,9 +45,9 @@ export class TOTPService {
     this.testCode = config.testCode;
   }
 
-  /**
-   * Generate a new TOTP secret for a user
-   */
+  
+
+
   async generateSecret(handle: string, email: string): Promise<TOTPSecret> {
     const secret = authenticator.generateSecret();
     const otpauth = authenticator.keyuri(email, this.issuer, secret);
@@ -62,9 +62,9 @@ export class TOTPService {
     };
   }
 
-  /**
-   * Encrypt data using AES-256-GCM
-   */
+  
+
+
   encrypt(text: string): EncryptedData {
     const salt = randomBytes(SALT_LENGTH);
     const key = scryptSync(this.encryptionKey, salt, KEY_LENGTH);
@@ -86,9 +86,9 @@ export class TOTPService {
     };
   }
 
-  /**
-   * Decrypt data using AES-256-GCM
-   */
+  
+
+
   decrypt(encryptedData: EncryptedData): string {
     const salt = Buffer.from(encryptedData.salt, 'base64');
     const key = scryptSync(this.encryptionKey, salt, KEY_LENGTH);
@@ -107,23 +107,23 @@ export class TOTPService {
     return decrypted.toString('utf8');
   }
 
-  /**
-   * Verify a TOTP token with timing attack prevention
-   */
+  
+
+
   async verifyToken(
     secretOrNull: TOTPSecret | null,
     token: string
   ): Promise<boolean> {
     const cleanToken = token.replace(/\s/g, '');
 
-    // Check test code in dev mode
+    
     if (this.devMode && this.testCode && cleanToken === this.testCode) {
       return true;
     }
 
     return await timingSafeVerify(async () => {
       if (!secretOrNull) {
-        // Perform dummy verification to maintain timing
+        
         const dummySecret = 'JBSWY3DPEHPK3PXP';
         authenticator.verify({ token: cleanToken, secret: dummySecret });
         return false;
@@ -136,40 +136,40 @@ export class TOTPService {
     }, 150);
   }
 
-  /**
-   * Generate a current TOTP token (for testing)
-   */
+  
+
+
   generateToken(secret: TOTPSecret): string {
     return authenticator.generate(secret.secret);
   }
 
-  /**
-   * Generate QR code URL from secret
-   */
+  
+
+
   async generateQRCode(secret: TOTPSecret): Promise<string> {
     const otpauth = authenticator.keyuri(secret.email, this.issuer, secret.secret);
     return await qrcode.toDataURL(otpauth);
   }
 
-  /**
-   * Encrypt backup codes
-   */
+  
+
+
   encryptBackupCodes(codes: string[]): EncryptedData {
     return this.encrypt(JSON.stringify(codes));
   }
 
-  /**
-   * Decrypt backup codes
-   */
+  
+
+
   decryptBackupCodes(encryptedData: EncryptedData): string[] {
     const json = this.decrypt(encryptedData);
     return JSON.parse(json);
   }
 }
 
-/**
- * Create a TOTP service instance from config
- */
+
+
+
 export function createTOTPService(config: TOTPConfig): TOTPService {
   return new TOTPService({
     encryptionKey: config.encryptionKey,

@@ -1,12 +1,12 @@
-/**
- * SvelteKit Adapter
- *
- * First-class integration for SvelteKit applications.
- *
- * @module @tinyland/auth/sveltekit
- */
 
-// Cookie helpers
+
+
+
+
+
+
+
+
 export {
   setSessionCookie,
   setAuthDataCookie,
@@ -17,7 +17,7 @@ export {
   DEFAULT_COOKIE_CONFIG,
 } from './session-cookies.js';
 
-// Route guards
+
 export {
   requireAuth,
   requireRole,
@@ -32,7 +32,7 @@ export {
   type GuardResult,
 } from './guards.js';
 
-// Server hook
+
 export {
   createAuthHandle,
   createCSRFHandle,
@@ -41,7 +41,7 @@ export {
   type AuthHandleConfig,
 } from './hook.js';
 
-// CSRF Store (Svelte 5 runes)
+
 export {
   createCSRFStore,
   csrfStore,
@@ -52,7 +52,7 @@ export {
   type CSRFStoreConfig,
 } from './stores/csrf.svelte.js';
 
-// Ownership guards (SvelteKit wrappers)
+
 export {
   requireContentEditPermission,
   requireContentDeletePermission,
@@ -64,7 +64,7 @@ export {
   type OwnedContent,
 } from './ownership.js';
 
-// mTLS adapter (SvelteKit wrappers)
+
 export {
   extractCertificateFromEvent,
   requireMTLS,

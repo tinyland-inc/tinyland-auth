@@ -1,26 +1,26 @@
-/**
- * Security Utilities
- *
- * Timing-safe comparison, IP hashing, and other security utilities.
- *
- * @module @tinyland/auth/core/security
- */
+
+
+
+
+
+
+
 
 import { timingSafeEqual, createHash } from 'crypto';
 
-/**
- * Sleep for a specified number of milliseconds
- */
+
+
+
 async function sleep(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-/**
- * Perform constant-time string comparison
- *
- * Prevents timing attacks by ensuring all comparisons take the same time
- * regardless of where strings differ.
- */
+
+
+
+
+
+
 export function constantTimeCompare(a: string, b: string): boolean {
   const maxLength = Math.max(a.length, b.length);
   const paddedA = a.padEnd(maxLength, '\0');
@@ -36,12 +36,12 @@ export function constantTimeCompare(a: string, b: string): boolean {
   }
 }
 
-/**
- * Perform timing-safe verification with normalized response time
- *
- * Ensures all verifications take at least a minimum time, preventing
- * attackers from distinguishing between different failure modes.
- */
+
+
+
+
+
+
 export async function timingSafeVerify(
   verifyFn: () => Promise<boolean>,
   targetTimeMs: number = 100
@@ -66,11 +66,11 @@ export async function timingSafeVerify(
   }
 }
 
-/**
- * Timing-safe database query wrapper
- *
- * Ensures database queries take constant time regardless of result.
- */
+
+
+
+
+
 export async function timingSafeQuery<T>(
   queryFn: () => Promise<T | null>,
   minimumTimeMs: number = 50
@@ -95,33 +95,33 @@ export async function timingSafeQuery<T>(
   }
 }
 
-/**
- * Generate timing-safe error responses
- */
+
+
+
 export function timingSafeError(_errorType: string): string {
   return 'Invalid credentials';
 }
 
-/**
- * Hash an IP address for privacy-compliant storage
- *
- * Uses SHA-256 to create a one-way hash that allows correlation
- * without storing the actual IP address.
- */
+
+
+
+
+
+
 export function hashIp(ip: string, salt?: string): string {
   const data = salt ? `${ip}:${salt}` : ip;
   return createHash('sha256').update(data).digest('hex').substring(0, 16);
 }
 
-/**
- * Mask an IP address for display purposes
- *
- * IPv4: 192.168.1.100 -> 192.168.*.*
- * IPv6: 2001:db8::1 -> 2001:db8:*:*:*:*:*:*
- */
+
+
+
+
+
+
 export function maskIp(ip: string): string {
   if (ip.includes(':')) {
-    // IPv6
+    
     const parts = ip.split(':');
     if (parts.length >= 2) {
       return `${parts[0]}:${parts[1]}:*:*:*:*:*:*`;
@@ -129,7 +129,7 @@ export function maskIp(ip: string): string {
     return '*:*:*:*:*:*:*:*';
   }
 
-  // IPv4
+  
   const parts = ip.split('.');
   if (parts.length === 4) {
     return `${parts[0]}.${parts[1]}.*.*`;
@@ -137,9 +137,9 @@ export function maskIp(ip: string): string {
   return '*.*.*.*';
 }
 
-/**
- * Validate password strength
- */
+
+
+
 export interface PasswordValidationResult {
   valid: boolean;
   errors: string[];
@@ -185,9 +185,9 @@ export function validatePassword(
   };
 }
 
-/**
- * Timing attack prevention metrics
- */
+
+
+
 export class TimingMetrics {
   private measurements: number[] = [];
   private maxMeasurements = 1000;
@@ -235,7 +235,7 @@ export class TimingMetrics {
 
 export const timingMetrics = new TimingMetrics();
 
-// Password hashing utilities
+
 export {
   hashPassword,
   verifyPassword,
@@ -245,7 +245,7 @@ export {
   type PasswordHashConfig,
 } from './password.js';
 
-// mTLS certificate validation
+
 export {
   extractCertificate,
   getCertificateFingerprint,

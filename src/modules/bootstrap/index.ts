@@ -1,12 +1,12 @@
-/**
- * Bootstrap Module
- *
- * Handles first-time system setup and super_admin creation.
- * The bootstrap flow ensures the first user has TOTP enabled
- * and backup codes generated before completing setup.
- *
- * @module @tinyland/auth/modules/bootstrap
- */
+
+
+
+
+
+
+
+
+
 
 import type { IStorageAdapter } from '../../storage/interface.js';
 import type { AdminUser, EncryptedTOTPSecret } from '../../types/auth.js';
@@ -19,31 +19,31 @@ import type {
 import { hashPassword } from '../../core/security/password.js';
 import { generateBackupCodes, createBackupCodeSet } from '../../core/backup-codes/index.js';
 
-/**
- * Bootstrap service configuration
- */
+
+
+
 export interface BootstrapServiceConfig {
-  /** Storage adapter for persistence */
+  
   storage: IStorageAdapter;
-  /** Application name for TOTP issuer */
+  
   appName: string;
-  /** bcrypt rounds for password hashing */
+  
   bcryptRounds: number;
-  /** Number of backup codes to generate */
+  
   backupCodesCount: number;
-  /** TOTP secret generator function */
+  
   generateTOTPSecret: () => string;
-  /** TOTP QR code generator function */
+  
   generateQRCode: (handle: string, secret: string, issuer: string) => Promise<string>;
-  /** TOTP verification function */
+  
   verifyTOTP: (secret: string, token: string) => boolean;
-  /** TOTP secret encryption function */
+  
   encryptTOTPSecret: (handle: string, secret: string) => Promise<EncryptedTOTPSecret>;
 }
 
-/**
- * Bootstrap state stored in session/cookie during multi-step flow
- */
+
+
+
 export interface BootstrapState {
   handle: string;
   passwordHash: string;
@@ -60,39 +60,39 @@ export interface BootstrapState {
   };
 }
 
-/**
- * Bootstrap Service
- *
- * Manages the initial system setup flow:
- * 1. Check if bootstrap is needed (no users exist)
- * 2. Create first super_admin with credentials
- * 3. Set up TOTP and generate QR code
- * 4. Generate and store backup codes
- * 5. Verify TOTP before finalizing
- *
- * @example
- * ```typescript
- * import { BootstrapService } from '@tinyland/auth/modules/bootstrap';
- *
- * const bootstrap = new BootstrapService({
- *   storage,
- *   appName: 'My App',
- *   generateTOTPSecret: () => authenticator.generateSecret(),
- *   generateQRCode: async (handle, secret, issuer) => {
- *     const uri = authenticator.keyuri(handle, issuer, secret);
- *     return qrcode.toDataURL(uri);
- *   },
- *   verifyTOTP: (secret, token) => authenticator.verify({ token, secret }),
- *   encryptTOTPSecret: async (handle, secret) => totpService.encrypt(handle, secret),
- * });
- *
- * // Check status
- * const status = await bootstrap.getStatus();
- * if (status.needsBootstrap) {
- *   // Start bootstrap flow
- * }
- * ```
- */
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 export class BootstrapService {
   private config: BootstrapServiceConfig;
 
@@ -104,9 +104,9 @@ export class BootstrapService {
     };
   }
 
-  /**
-   * Check bootstrap status
-   */
+  
+
+
   async getStatus(): Promise<BootstrapStatus> {
     const hasUsers = await this.config.storage.hasUsers();
 
@@ -117,49 +117,49 @@ export class BootstrapService {
     };
   }
 
-  /**
-   * Initialize bootstrap flow (step 1)
-   *
-   * Creates credentials and generates TOTP secret.
-   * Returns state to be stored in session for subsequent steps.
-   */
+  
+
+
+
+
+
   async initiate(request: BootstrapRequest): Promise<{
     state: BootstrapState;
     qrCodeUrl: string;
     backupCodes: string[];
   }> {
-    // Verify bootstrap is allowed
+    
     const status = await this.getStatus();
     if (!status.needsBootstrap) {
       throw new Error('Bootstrap not allowed: users already exist');
     }
 
-    // Validate handle format
+    
     if (!/^[a-zA-Z][a-zA-Z0-9_-]{2,29}$/.test(request.handle)) {
       throw new Error(
         'Handle must start with a letter, be 3-30 characters, and contain only letters, numbers, underscores, or hyphens'
       );
     }
 
-    // Hash password
+    
     const passwordHash = await hashPassword(request.password, {
       rounds: this.config.bcryptRounds,
     });
 
-    // Generate TOTP secret
+    
     const totpSecret = this.config.generateTOTPSecret();
 
-    // Generate QR code
+    
     const qrCodeUrl = await this.config.generateQRCode(
       request.handle,
       totpSecret,
       this.config.appName
     );
 
-    // Generate backup codes
+    
     const backupCodes = generateBackupCodes(this.config.backupCodesCount);
 
-    // Create state for session storage
+    
     const state: BootstrapState = {
       handle: request.handle,
       passwordHash,
@@ -178,9 +178,9 @@ export class BootstrapService {
     };
   }
 
-  /**
-   * Update profile during bootstrap (step 2)
-   */
+  
+
+
   updateProfile(
     state: BootstrapState,
     profile: { bio?: string; pronouns?: string; avatarUrl?: string }
@@ -192,14 +192,14 @@ export class BootstrapService {
     };
   }
 
-  /**
-   * Verify TOTP and complete bootstrap (final step)
-   */
+  
+
+
   async complete(
     state: BootstrapState,
     verification: BootstrapVerificationRequest
   ): Promise<BootstrapResponse> {
-    // Validate state
+    
     if (!state || !state.handle || !state.totpSecret) {
       return {
         success: false,
@@ -207,7 +207,7 @@ export class BootstrapService {
       };
     }
 
-    // Check state hasn't expired (10 minutes)
+    
     const maxAge = 10 * 60 * 1000;
     if (Date.now() - state.timestamp > maxAge) {
       return {
@@ -216,7 +216,7 @@ export class BootstrapService {
       };
     }
 
-    // Verify handle matches
+    
     if (state.handle !== verification.handle) {
       return {
         success: false,
@@ -224,7 +224,7 @@ export class BootstrapService {
       };
     }
 
-    // Verify TOTP code
+    
     const isValidTOTP = this.config.verifyTOTP(state.totpSecret, verification.totpCode);
     if (!isValidTOTP) {
       return {
@@ -234,26 +234,26 @@ export class BootstrapService {
     }
 
     try {
-      // Encrypt and save TOTP secret FIRST
+      
       const encryptedSecret = await this.config.encryptTOTPSecret(
         state.handle,
         state.totpSecret
       );
       await this.config.storage.saveTOTPSecret(state.handle, encryptedSecret);
 
-      // Verify it was saved
+      
       const savedSecret = await this.config.storage.getTOTPSecret(state.handle);
       if (!savedSecret) {
         throw new Error('Failed to verify TOTP secret was saved');
       }
 
-      // Create backup code set
+      
       const backupCodeSet = createBackupCodeSet(
-        'pending', // Will be updated with user ID
+        'pending', 
         state.backupCodes
       );
 
-      // Create user
+      
       const user = await this.config.storage.createUser({
         handle: state.handle,
         email: state.email || `${state.handle}@localhost`,
@@ -272,11 +272,11 @@ export class BootstrapService {
         avatarUrl: state.profile?.avatarUrl,
       });
 
-      // Update backup codes with actual user ID
+      
       backupCodeSet.userId = user.id;
       await this.config.storage.saveBackupCodes(user.id, backupCodeSet);
 
-      // Log audit event
+      
       await this.config.storage.logAuditEvent({
         timestamp: new Date().toISOString(),
         type: 'BOOTSTRAP_COMPLETED' as any,
@@ -291,7 +291,7 @@ export class BootstrapService {
         source: 'system',
       });
 
-      // Return success (without sensitive data)
+      
       const safeUser: Omit<AdminUser, 'passwordHash'> = {
         ...user,
       };
@@ -310,9 +310,9 @@ export class BootstrapService {
     }
   }
 
-  /**
-   * Validate bootstrap state hasn't expired
-   */
+  
+
+
   isStateValid(state: BootstrapState, maxAgeMs: number = 600000): boolean {
     if (!state || !state.timestamp) {
       return false;
@@ -321,14 +321,14 @@ export class BootstrapService {
   }
 }
 
-/**
- * Create a bootstrap service instance
- */
+
+
+
 export function createBootstrapService(
   config: BootstrapServiceConfig
 ): BootstrapService {
   return new BootstrapService(config);
 }
 
-// Re-export types for convenience
+
 export type { BootstrapRequest, BootstrapResponse, BootstrapVerificationRequest, BootstrapStatus };
