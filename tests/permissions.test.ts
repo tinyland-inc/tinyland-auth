@@ -1,8 +1,8 @@
-/**
- * Permission Functions Unit Tests
- *
- * Tests for RBAC permission system.
- */
+
+
+
+
+
 
 import { describe, it, expect } from 'vitest';
 import {
@@ -19,7 +19,7 @@ import {
 import { PERMISSIONS } from '../src/types/permissions.js';
 import type { AdminUser } from '../src/types/auth.js';
 
-// Test users for various roles
+
 const createTestUser = (role: string, id = 'user-1'): AdminUser => ({
   id,
   handle: `test_${role}`,
@@ -186,7 +186,7 @@ describe('Content Visibility', () => {
 
     it('should include members content for members', () => {
       const filtered = filterContentByVisibility(testContent, 'member', 'user-1');
-      expect(filtered).toHaveLength(3); // public, members, and own private
+      expect(filtered).toHaveLength(3); 
       expect(filtered.map(c => c.id)).toContain('1');
       expect(filtered.map(c => c.id)).toContain('2');
       expect(filtered.map(c => c.id)).toContain('4');
@@ -194,7 +194,7 @@ describe('Content Visibility', () => {
 
     it('should include admin content for admins', () => {
       const filtered = filterContentByVisibility(testContent, 'admin', 'user-1');
-      expect(filtered).toHaveLength(4); // all content
+      expect(filtered).toHaveLength(4); 
     });
   });
 

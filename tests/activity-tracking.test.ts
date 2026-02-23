@@ -1,8 +1,8 @@
-/**
- * Activity Tracking Unit Tests
- *
- * Tests for session activity tracking, renewal logic, and cleanup.
- */
+
+
+
+
+
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { createActivityTracker, type ActivityEvent } from '../src/core/session/activity-tracking.js';
@@ -18,7 +18,7 @@ describe('Activity Tracking', () => {
 
   function createSession(overrides: Record<string, unknown> = {}) {
     const now = new Date();
-    const expires = new Date(now.getTime() + 2 * 24 * 60 * 60 * 1000); // 2 days from now
+    const expires = new Date(now.getTime() + 2 * 24 * 60 * 60 * 1000); 
 
     return storage.createSession(
       'user-1',
@@ -79,7 +79,7 @@ describe('Activity Tracking', () => {
           if (callCount === 1) {
             throw new Error('Logger failure');
           }
-          // Second call (from the catch block) succeeds
+          
         },
       });
 
@@ -88,11 +88,11 @@ describe('Activity Tracking', () => {
         activityType: 'page_view',
       };
 
-      // The catch block calls logger again for the error;
-      // if the error logger also throws, the error will propagate
-      // With a logger that only fails once, it should succeed
+      
+      
+      
       await expect(tracker.logActivity(activity)).resolves.toBeUndefined();
-      expect(callCount).toBe(2); // Initial call + error handling call
+      expect(callCount).toBe(2); 
     });
   });
 
@@ -100,13 +100,13 @@ describe('Activity Tracking', () => {
     it('should return true when session expires within threshold', () => {
       const tracker = createActivityTracker({
         storage,
-        renewThresholdMs: 24 * 60 * 60 * 1000, // 1 day
+        renewThresholdMs: 24 * 60 * 60 * 1000, 
       });
 
       const session = {
         id: 'test-session',
         userId: 'user-1',
-        expires: new Date(Date.now() + 12 * 60 * 60 * 1000).toISOString(), // 12 hours from now
+        expires: new Date(Date.now() + 12 * 60 * 60 * 1000).toISOString(), 
         expiresAt: new Date(Date.now() + 12 * 60 * 60 * 1000).toISOString(),
         createdAt: new Date().toISOString(),
         clientIp: '127.0.0.1',
@@ -119,13 +119,13 @@ describe('Activity Tracking', () => {
     it('should return false when session has plenty of time left', () => {
       const tracker = createActivityTracker({
         storage,
-        renewThresholdMs: 24 * 60 * 60 * 1000, // 1 day
+        renewThresholdMs: 24 * 60 * 60 * 1000, 
       });
 
       const session = {
         id: 'test-session',
         userId: 'user-1',
-        expires: new Date(Date.now() + 5 * 24 * 60 * 60 * 1000).toISOString(), // 5 days from now
+        expires: new Date(Date.now() + 5 * 24 * 60 * 60 * 1000).toISOString(), 
         expiresAt: new Date(Date.now() + 5 * 24 * 60 * 60 * 1000).toISOString(),
         createdAt: new Date().toISOString(),
         clientIp: '127.0.0.1',
@@ -139,9 +139,9 @@ describe('Activity Tracking', () => {
   describe('renewSessionOnActivity', () => {
     it('should renew a session that is near expiry', async () => {
       const session = await createSession();
-      // Manually update expires to be close to threshold
+      
       await storage.updateSession(session.id, {
-        expires: new Date(Date.now() + 12 * 60 * 60 * 1000).toISOString(), // 12 hours
+        expires: new Date(Date.now() + 12 * 60 * 60 * 1000).toISOString(), 
       });
 
       const tracker = createActivityTracker({
@@ -153,21 +153,21 @@ describe('Activity Tracking', () => {
       const renewed = await tracker.renewSessionOnActivity(session.id);
       expect(renewed).toBe(true);
 
-      // Verify session was extended
+      
       const updatedSession = await storage.getSession(session.id);
       expect(updatedSession).not.toBeNull();
       const newExpiry = new Date(updatedSession!.expires).getTime();
-      // New expiry should be ~7 days from now
+      
       expect(newExpiry).toBeGreaterThan(Date.now() + 6 * 24 * 60 * 60 * 1000);
     });
 
     it('should not renew a session that is not near expiry', async () => {
       const session = await createSession();
-      // Session already has plenty of time (default is > 1 day threshold)
+      
 
       const tracker = createActivityTracker({
         storage,
-        renewThresholdMs: 12 * 60 * 60 * 1000, // 12 hours
+        renewThresholdMs: 12 * 60 * 60 * 1000, 
       });
 
       const renewed = await tracker.renewSessionOnActivity(session.id);
@@ -184,7 +184,7 @@ describe('Activity Tracking', () => {
     it('should respect minimum renewal interval', async () => {
       const session = await createSession();
       await storage.updateSession(session.id, {
-        expires: new Date(Date.now() + 6 * 60 * 60 * 1000).toISOString(), // 6 hours
+        expires: new Date(Date.now() + 6 * 60 * 60 * 1000).toISOString(), 
       });
 
       const tracker = createActivityTracker({
@@ -194,16 +194,16 @@ describe('Activity Tracking', () => {
         minRenewalIntervalMs: 5 * 60 * 1000,
       });
 
-      // First renewal should succeed
+      
       const first = await tracker.renewSessionOnActivity(session.id);
       expect(first).toBe(true);
 
-      // Update expiry back to near threshold for second attempt
+      
       await storage.updateSession(session.id, {
         expires: new Date(Date.now() + 6 * 60 * 60 * 1000).toISOString(),
       });
 
-      // Second renewal within interval should fail
+      
       const second = await tracker.renewSessionOnActivity(session.id);
       expect(second).toBe(false);
     });
@@ -242,14 +242,14 @@ describe('Activity Tracking', () => {
         renewThresholdMs: 24 * 60 * 60 * 1000,
       });
 
-      // 'scroll' and 'click' are not in the default renewal activities
+      
       await tracker.trackActivityAndRenew({
         sessionId: session.id,
         activityType: 'scroll',
       });
 
-      // Session should not have been renewed
-      // (We just verify it completes without error)
+      
+      
     });
   });
 
@@ -263,13 +263,13 @@ describe('Activity Tracking', () => {
       const tracker = createActivityTracker({
         storage,
         renewThresholdMs: 24 * 60 * 60 * 1000,
-        minRenewalIntervalMs: 0, // No interval for test
+        minRenewalIntervalMs: 0, 
       });
 
-      // Trigger a renewal to add to the map
+      
       await tracker.renewSessionOnActivity(session.id);
 
-      // Cleanup should work without error
+      
       tracker.cleanupRenewalTracking();
     });
   });

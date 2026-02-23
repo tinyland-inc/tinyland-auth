@@ -1,15 +1,15 @@
-/**
- * TOTP Service Unit Tests
- *
- * Tests for TOTP secret generation, token verification, encryption/decryption,
- * and backup code encryption. Includes PBT for secret format validation.
- */
+
+
+
+
+
+
 
 import { describe, it, expect } from 'vitest';
 import { TOTPService } from '../src/core/totp/index.js';
 import type { TOTPSecret, EncryptedData } from '../src/types/auth.js';
 
-// 32-byte ASCII encryption key for testing
+
 const TEST_ENCRYPTION_KEY = 'abcdefghijklmnopqrstuvwxyz123456';
 
 function createTestService(overrides: Partial<ConstructorParameters<typeof TOTPService>[0]> = {}): TOTPService {
@@ -38,7 +38,7 @@ describe('TOTPService', () => {
       const service = createTestService();
       const secret = await service.generateSecret('testuser', 'test@example.com');
 
-      // Base32 alphabet: A-Z, 2-7
+      
       expect(secret.secret).toMatch(/^[A-Z2-7]+$/);
     });
 
@@ -112,7 +112,7 @@ describe('TOTPService', () => {
       const service = createTestService();
       const encrypted = service.encrypt('secret');
 
-      // Tamper with the ciphertext
+      
       const tampered: EncryptedData = {
         ...encrypted,
         encrypted: 'AAAA' + encrypted.encrypted.slice(4),
@@ -145,7 +145,7 @@ describe('TOTPService', () => {
       const service = createTestService();
       const secret = await service.generateSecret('testuser', 'test@example.com');
 
-      // Generate a current valid token
+      
       const token = service.generateToken(secret);
 
       const result = await service.verifyToken(secret, token);
@@ -172,7 +172,7 @@ describe('TOTPService', () => {
       const secret = await service.generateSecret('testuser', 'test@example.com');
       const token = service.generateToken(secret);
 
-      // Add spaces
+      
       const spacedToken = `${token.slice(0, 3)} ${token.slice(3)}`;
       const result = await service.verifyToken(secret, spacedToken);
       expect(result).toBe(true);
@@ -197,9 +197,9 @@ describe('TOTPService', () => {
 
       const secret = await service.generateSecret('testuser', 'test@example.com');
       const result = await service.verifyToken(secret, '999999');
-      // This should be false unless 999999 happens to be the current valid code
-      // The important thing is that dev mode shortcut is not used
-      // We can't assert it's always false since there is a 1/1000000 chance it is valid
+      
+      
+      
       expect(typeof result).toBe('boolean');
     });
   });
@@ -251,7 +251,7 @@ describe('TOTPService', () => {
 
       const encrypted = service.encryptBackupCodes(codes);
 
-      // Encrypted data should have all required fields
+      
       expect(encrypted.encrypted).toBeTruthy();
       expect(encrypted.salt).toBeTruthy();
       expect(encrypted.iv).toBeTruthy();
@@ -283,7 +283,7 @@ describe('TOTP PBT: Generated secrets', () => {
     const service = createTestService();
     const base32Regex = /^[A-Z2-7]+=*$/;
 
-    // Test multiple generations
+    
     for (let i = 0; i < 50; i++) {
       const secret = await service.generateSecret(`user${i}`, `user${i}@example.com`);
       expect(secret.secret).toMatch(base32Regex);
@@ -293,8 +293,8 @@ describe('TOTP PBT: Generated secrets', () => {
   it('INVARIANT: generated secrets have sufficient length for security', async () => {
     const service = createTestService();
 
-    // TOTP secrets should be at least 20 bytes (160 bits) of entropy
-    // In base32, each char encodes 5 bits, so minimum 32 chars
+    
+    
     for (let i = 0; i < 50; i++) {
       const secret = await service.generateSecret(`user${i}`, `user${i}@example.com`);
       expect(secret.secret.length).toBeGreaterThanOrEqual(16);
@@ -304,7 +304,7 @@ describe('TOTP PBT: Generated secrets', () => {
   it('INVARIANT: encrypt/decrypt roundtrip preserves arbitrary strings', () => {
     const service = createTestService();
 
-    // Test with various string patterns
+    
     const testStrings = [
       'JBSWY3DPEHPK3PXP',
       'a',

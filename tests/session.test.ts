@@ -1,9 +1,9 @@
-/**
- * Session Manager Unit Tests
- *
- * Tests for session CRUD operations, expiry handling, and renewal logic.
- * Uses MemoryStorageAdapter for isolated, fast testing.
- */
+
+
+
+
+
+
 
 import { describe, it, expect, beforeEach } from 'vitest';
 import { SessionManager, createSessionManager, classifyDevice, extractBrowserInfo } from '../src/core/session/index.js';
@@ -11,14 +11,14 @@ import { MemoryStorageAdapter } from '../src/storage/memory.js';
 import type { SessionConfig } from '../src/types/config.js';
 import type { Session, AdminUser, SessionMetadata } from '../src/types/auth.js';
 
-// Test configuration with short session lifetime for testing
+
 const testSessionConfig: SessionConfig = {
-  maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+  maxAge: 7 * 24 * 60 * 60 * 1000, 
   cookieName: 'test_session',
   secureCookie: false,
   sameSite: 'lax',
   httpOnly: true,
-  renewThreshold: 24 * 60 * 60 * 1000, // 1 day
+  renewThreshold: 24 * 60 * 60 * 1000, 
   maxConcurrentSessions: 5,
   rememberMeDuration: 30 * 24 * 60 * 60 * 1000,
 };
@@ -53,7 +53,7 @@ describe('SessionManager', () => {
     await storage.init();
     sessionManager = new SessionManager({ storage, config: testSessionConfig });
 
-    // Create a test user and capture the generated ID
+    
     const user = await storage.createUser(testUser);
     userId = user.id;
   });
@@ -74,7 +74,7 @@ describe('SessionManager', () => {
       const session1 = await sessionManager.createSession(userId, { handle: 'testuser', role: 'admin' });
       const session2 = await sessionManager.createSession(userId, { handle: 'testuser', role: 'admin' });
 
-      // Second createSession deletes previous sessions, but IDs should differ
+      
       expect(session1.id).not.toBe(session2.id);
     });
 
@@ -88,14 +88,14 @@ describe('SessionManager', () => {
     it('should remove existing sessions for the same user (single session strategy)', async () => {
       const session1 = await sessionManager.createSession(userId, { handle: 'testuser', role: 'admin' });
 
-      // Create a second session for the same user
+      
       const session2 = await sessionManager.createSession(userId, { handle: 'testuser', role: 'admin' });
 
-      // First session should be gone
+      
       const retrieved1 = await sessionManager.getSession(session1.id);
       expect(retrieved1).toBeNull();
 
-      // Second session should be valid
+      
       const retrieved2 = await sessionManager.getSession(session2.id);
       expect(retrieved2).not.toBeNull();
       expect(retrieved2?.id).toBe(session2.id);
@@ -140,7 +140,7 @@ describe('SessionManager', () => {
     it('should return null and delete expired sessions', async () => {
       const created = await sessionManager.createSession(userId, { handle: 'testuser', role: 'admin' });
 
-      // Manually expire the session by updating its expires field
+      
       await storage.updateSession(created.id, {
         expires: new Date(Date.now() - 1000).toISOString(),
       });
@@ -216,7 +216,7 @@ describe('SessionManager', () => {
       const created = await sessionManager.createSession(userId, { handle: 'testuser', role: 'admin' });
       const originalExpiry = new Date(created.expires).getTime();
 
-      // Wait a tiny bit to ensure time progresses
+      
       await new Promise(resolve => setTimeout(resolve, 10));
 
       const refreshed = await sessionManager.refreshSession(created.id);
@@ -251,7 +251,7 @@ describe('SessionManager', () => {
 
   describe('removeUserSessions', () => {
     it('should remove all sessions for a user', async () => {
-      // Create session
+      
       await sessionManager.createSession(userId, { handle: 'testuser', role: 'admin' });
 
       const count = await sessionManager.removeUserSessions(userId);
@@ -271,7 +271,7 @@ describe('SessionManager', () => {
     it('should remove expired sessions', async () => {
       const created = await sessionManager.createSession(userId, { handle: 'testuser', role: 'admin' });
 
-      // Manually expire the session
+      
       await storage.updateSession(created.id, {
         expires: new Date(Date.now() - 1000).toISOString(),
       });
@@ -308,7 +308,7 @@ describe('SessionManager', () => {
       const nearExpiry: Session = {
         id: 'test',
         userId: 'user-1',
-        expires: new Date(Date.now() + 1000).toISOString(), // Expires in 1 second
+        expires: new Date(Date.now() + 1000).toISOString(), 
         expiresAt: new Date(Date.now() + 1000).toISOString(),
         createdAt: new Date().toISOString(),
         clientIp: '127.0.0.1',
@@ -322,7 +322,7 @@ describe('SessionManager', () => {
       const freshSession: Session = {
         id: 'test',
         userId: 'user-1',
-        expires: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(), // 7 days from now
+        expires: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(), 
         expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
         createdAt: new Date().toISOString(),
         clientIp: '127.0.0.1',

@@ -1,8 +1,8 @@
-/**
- * Backup Codes Unit Tests
- *
- * Tests for backup code generation and verification.
- */
+
+
+
+
+
 
 import { describe, it, expect } from 'vitest';
 import {
@@ -47,7 +47,7 @@ describe('Backup Codes', () => {
   describe('hashBackupCode', () => {
     it('should return a hex string', () => {
       const hash = hashBackupCode('ABCD-1234');
-      expect(hash).toMatch(/^[a-f0-9]{64}$/); // SHA-256 = 64 hex chars
+      expect(hash).toMatch(/^[a-f0-9]{64}$/); 
     });
 
     it('should return consistent hashes for the same code', () => {
@@ -80,7 +80,7 @@ describe('Backup Codes', () => {
       expect(codeSet.codes).toHaveLength(2);
       expect(codeSet.generatedAt).toBeTruthy();
 
-      // Verify codes are hashed
+      
       codeSet.codes.forEach(code => {
         expect(code.hash).toMatch(/^[a-f0-9]{64}$/);
         expect(code.used).toBe(false);
@@ -118,7 +118,7 @@ describe('Backup Codes', () => {
 
       expect(result.valid).toBe(true);
 
-      // Try to use the same code again
+      
       const result2 = verifyBackupCode(result.codeSet, plainCodes[0]);
       expect(result2.valid).toBe(false);
     });
@@ -141,7 +141,7 @@ describe('Backup Codes', () => {
 
       expect(getRemainingCodesCount(codeSet)).toBe(5);
 
-      // Use one code
+      
       const result = verifyBackupCode(codeSet, plainCodes[0]);
       expect(getRemainingCodesCount(result.codeSet)).toBe(4);
     });
@@ -182,9 +182,9 @@ describe('Backup Codes', () => {
     });
 
     it('should reject invalid formats', () => {
-      expect(isValidCodeFormat('ABCD1234')).toBe(false); // No separator
-      expect(isValidCodeFormat('ABC-1234')).toBe(false); // Too short
-      expect(isValidCodeFormat('ABCDE-12345')).toBe(false); // Too long
+      expect(isValidCodeFormat('ABCD1234')).toBe(false); 
+      expect(isValidCodeFormat('ABC-1234')).toBe(false); 
+      expect(isValidCodeFormat('ABCDE-12345')).toBe(false); 
       expect(isValidCodeFormat('')).toBe(false);
     });
   });
@@ -213,7 +213,7 @@ describe('Backup Codes', () => {
       const plainCodes = generateBackupCodes(3);
       let codeSet = createBackupCodeSet('user-1', plainCodes);
 
-      // Use codes until only 2 remain
+      
       codeSet = verifyBackupCode(codeSet, plainCodes[0]).codeSet;
 
       expect(shouldRegenerateCodes(codeSet, 2)).toBe(true);

@@ -1,9 +1,9 @@
-/**
- * SvelteKit Route Guards Unit Tests
- *
- * Tests for requireAuth, requireRole, adminGuard, checkAuth, and protectEndpoint.
- * Mocks SvelteKit locals to simulate authenticated and unauthenticated states.
- */
+
+
+
+
+
+
 
 import { describe, it, expect } from 'vitest';
 import {
@@ -18,9 +18,9 @@ import {
 } from '../src/adapters/sveltekit/guards.js';
 import type { Session, AdminUser, AdminRole } from '../src/types/auth.js';
 
-// ---------------------------------------------------------------------------
-// Mock helpers
-// ---------------------------------------------------------------------------
+
+
+
 
 function createMockSession(overrides: Partial<Session> = {}): Session {
   return {
@@ -79,14 +79,14 @@ function createMockRequestEvent(options: {
   };
 }
 
-// ---------------------------------------------------------------------------
-// Redirect/Error catchers
-// ---------------------------------------------------------------------------
 
-/**
- * SvelteKit's redirect() and error() throw special objects.
- * These helpers catch and identify them.
- */
+
+
+
+
+
+
+
 function isRedirect(err: unknown): err is { status: number; location: string } {
   return (
     typeof err === 'object' &&
@@ -105,9 +105,9 @@ function isHttpError(err: unknown): err is { status: number; body: { message: st
   );
 }
 
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
+
+
+
 
 describe('getSessionFromLocals', () => {
   it('should return session when present', () => {
@@ -274,7 +274,7 @@ describe('requireRole', () => {
     const user = createMockUser({ role: 'super_admin' });
     const locals = createMockLocals({ session, user });
 
-    // Should not throw for any role
+    
     expect(() => requireRole(locals, 'admin')).not.toThrow();
     expect(() => requireRole(locals, 'moderator')).not.toThrow();
     expect(() => requireRole(locals, 'viewer')).not.toThrow();
@@ -463,8 +463,8 @@ describe('Guard Role Hierarchy', () => {
   it('INVARIANT: higher roles always pass guards for lower role requirements', () => {
     for (let i = 0; i < roles.length; i++) {
       for (let j = i; j < roles.length; j++) {
-        const currentRole = roles[i]; // Higher or equal
-        const requiredRole = roles[j]; // Lower or equal
+        const currentRole = roles[i]; 
+        const requiredRole = roles[j]; 
 
         const session = createMockSession({
           user: {
@@ -477,7 +477,7 @@ describe('Guard Role Hierarchy', () => {
         const user = createMockUser({ role: currentRole });
         const locals = createMockLocals({ session, user });
 
-        // Should not throw
+        
         expect(() => requireRole(locals, requiredRole)).not.toThrow();
       }
     }
@@ -485,8 +485,8 @@ describe('Guard Role Hierarchy', () => {
 
   it('INVARIANT: lower roles always fail guards for higher role requirements', () => {
     for (let i = 1; i < roles.length; i++) {
-      const currentRole = roles[i]; // Lower role
-      const requiredRole = roles[0]; // Highest role (super_admin)
+      const currentRole = roles[i]; 
+      const requiredRole = roles[0]; 
 
       const session = createMockSession({
         user: {

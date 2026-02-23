@@ -1,17 +1,17 @@
-/**
- * CSRF Protection Unit Tests
- *
- * Tests for CSRF token validation via the createCSRFHandle middleware.
- * Tests cover token matching, skip methods, skip routes, and edge cases.
- */
+
+
+
+
+
+
 
 import { describe, it, expect } from 'vitest';
 import { createCSRFHandle } from '../src/adapters/sveltekit/hook.js';
 import type { Handle } from '@sveltejs/kit';
 
-// ---------------------------------------------------------------------------
-// Mock helpers for SvelteKit RequestEvent
-// ---------------------------------------------------------------------------
+
+
+
 
 interface MockCookies {
   data: Map<string, string>;
@@ -61,10 +61,10 @@ function createMockEvent(options: {
   };
 }
 
-/**
- * Simulate calling a SvelteKit Handle with a mock event.
- * The resolve function is a pass-through that returns a 200 response.
- */
+
+
+
+
 async function callHandle(
   handle: Handle,
   event: MockEvent
@@ -73,9 +73,9 @@ async function callHandle(
   return handle({ event: event as any, resolve: resolve as any });
 }
 
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
+
+
+
 
 describe('createCSRFHandle', () => {
   describe('safe methods (skip by default)', () => {
@@ -211,7 +211,7 @@ describe('createCSRFHandle', () => {
       const event = createMockEvent({
         method: 'POST',
         path: '/api/submit',
-        headers: { 'x-csrf-token': token }, // Wrong header name
+        headers: { 'x-csrf-token': token }, 
         cookies: { csrf_token: token },
       });
 
@@ -237,7 +237,7 @@ describe('createCSRFHandle', () => {
       const handle = createCSRFHandle({ skipMethods: ['GET', 'POST'] });
       const event = createMockEvent({ method: 'POST', path: '/api/submit' });
 
-      // POST is now skipped
+      
       const response = await callHandle(handle, event);
       expect(response.status).toBe(200);
     });
@@ -289,8 +289,8 @@ describe('createCSRFHandle', () => {
 
       const pairs = [
         ['token-a', 'token-b'],
-        ['abc', 'ABC'], // Case sensitive
-        ['token-x', 'token-y'], // Distinct tokens
+        ['abc', 'ABC'], 
+        ['token-x', 'token-y'], 
         ['', 'non-empty'],
       ];
 

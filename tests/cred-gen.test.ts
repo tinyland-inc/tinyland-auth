@@ -1,8 +1,8 @@
-/**
- * Credentials Module Unit Tests
- *
- * Tests for credential generation, text card creation, and helper functions.
- */
+
+
+
+
+
 
 import { describe, it, expect } from 'vitest';
 import {
@@ -39,9 +39,9 @@ describe('Credentials Generator', () => {
         totpUri: 'otpauth://totp/test?secret=JBSWY3DPEHPK3PXP',
       });
 
-      // Should not contain the actual password
+      
       expect(card).not.toContain('SecretPassword');
-      // Should contain the masked version
+      
       expect(card).toContain('Se**********rd');
     });
 
@@ -285,7 +285,7 @@ describe('Credentials Helpers', () => {
       const result = generateSecureCredentialsLink('test-id', 120);
       const afterMs = Date.now();
 
-      // Should expire ~120 minutes from now
+      
       const expectedMinMs = beforeMs + 120 * 60 * 1000;
       const expectedMaxMs = afterMs + 120 * 60 * 1000;
 

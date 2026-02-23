@@ -1,9 +1,9 @@
-/**
- * Handle Validator Unit Tests
- *
- * Tests for handle validation, adding, removing, and listing handles.
- * Uses the MemoryStorageAdapter for isolation.
- */
+
+
+
+
+
+
 
 import { describe, it, expect, beforeEach } from 'vitest';
 import {
@@ -20,12 +20,12 @@ function createTestConfig(storage?: MemoryStorageAdapter): HandleValidatorConfig
   return {
     storage: storage || new MemoryStorageAdapter(),
     logger: () => {},
-    timingDelayMs: 0, // No delay in tests for speed
+    timingDelayMs: 0, 
   };
 }
 
 async function createTestUser(storage: MemoryStorageAdapter, handle: string, password: string) {
-  const passwordHash = await hashPassword(password, { rounds: 4 }); // Low rounds for test speed
+  const passwordHash = await hashPassword(password, { rounds: 4 }); 
   await storage.createUser({
     handle,
     email: `${handle}@example.com`,
@@ -109,7 +109,7 @@ describe('Handle Validator', () => {
       const result = await addHandle('newuser', 'SecurePass123!', config);
       expect(result).toBe(true);
 
-      // Verify user was created
+      
       const user = await storage.getUserByHandle('newuser');
       expect(user).not.toBeNull();
       expect(user!.handle).toBe('newuser');
@@ -127,9 +127,9 @@ describe('Handle Validator', () => {
 
       const user = await storage.getUserByHandle('hashtest');
       expect(user).not.toBeNull();
-      // Password hash should start with bcrypt prefix
+      
       expect(user!.passwordHash).toMatch(/^\$2[aby]?\$/);
-      // Should not be the plaintext password
+      
       expect(user!.passwordHash).not.toBe('MyPassword123!');
     });
 
@@ -155,7 +155,7 @@ describe('Handle Validator', () => {
       const result = await removeHandle('removeme', config);
       expect(result).toBe(true);
 
-      // Verify user was removed
+      
       const user = await storage.getUserByHandle('removeme');
       expect(user).toBeNull();
     });

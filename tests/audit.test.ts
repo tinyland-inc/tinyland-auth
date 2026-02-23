@@ -1,8 +1,8 @@
-/**
- * Audit Logger Unit Tests
- *
- * Tests for audit log writing, event formatting, severity, and querying.
- */
+
+
+
+
+
 
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
 import {
@@ -26,7 +26,7 @@ describe('Audit Logger', () => {
     return {
       storage,
       enabled: true,
-      flushInterval: 50, // Short interval for tests
+      flushInterval: 50, 
       ...overrides,
     };
   }
@@ -48,7 +48,7 @@ describe('Audit Logger', () => {
         { userId: 'user-1', ipAddress: '127.0.0.1' }
       );
 
-      // Flush to ensure event is written
+      
       await logger.flush();
 
       const events = await logger.getRecentEvents(10);
@@ -117,7 +117,7 @@ describe('Audit Logger', () => {
         { userId: 'admin-1' }
       );
 
-      // No explicit flush needed - critical events flush immediately
+      
       const events = await logger.getRecentEvents(10);
       expect(events.length).toBe(1);
     });
@@ -142,7 +142,7 @@ describe('Audit Logger', () => {
         },
       }));
 
-      // Should not throw
+      
       await expect(
         logger.log(AuditEventType.LOGIN_SUCCESS, { handle: 'testuser' })
       ).resolves.toBeUndefined();

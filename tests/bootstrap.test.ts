@@ -1,6 +1,6 @@
-/**
- * Bootstrap Service Tests
- */
+
+
+
 
 import { describe, it, expect, beforeEach } from 'vitest';
 import { BootstrapService, createBootstrapService } from '../src/modules/bootstrap/index.js';
@@ -8,7 +8,7 @@ import { MemoryStorageAdapter } from '../src/storage/memory.js';
 import type { BootstrapServiceConfig, BootstrapState } from '../src/modules/bootstrap/index.js';
 import type { EncryptedTOTPSecret } from '../src/types/auth.js';
 
-// Mock functions
+
 const mockGenerateTOTPSecret = () => 'MOCK_SECRET_BASE32';
 const mockGenerateQRCode = async () => 'data:image/png;base64,mockqrcode';
 const mockVerifyTOTP = (secret: string, token: string) => token === '123456';
@@ -36,7 +36,7 @@ describe('BootstrapService', () => {
     config = {
       storage,
       appName: 'Test App',
-      bcryptRounds: 4, // Low for fast tests
+      bcryptRounds: 4, 
       backupCodesCount: 5,
       generateTOTPSecret: mockGenerateTOTPSecret,
       generateQRCode: mockGenerateQRCode,
@@ -112,7 +112,7 @@ describe('BootstrapService', () => {
     it('should reject invalid handle format', async () => {
       await expect(
         service.initiate({
-          handle: '123invalid', // Starts with number
+          handle: '123invalid', 
           password: 'test',
           displayName: 'Test',
         })
@@ -120,7 +120,7 @@ describe('BootstrapService', () => {
 
       await expect(
         service.initiate({
-          handle: 'ab', // Too short
+          handle: 'ab', 
           password: 'test',
           displayName: 'Test',
         })
@@ -187,7 +187,7 @@ describe('BootstrapService', () => {
     it('should complete bootstrap with valid TOTP', async () => {
       const result = await service.complete(validState, {
         handle: 'admin',
-        totpCode: '123456', // Our mock accepts this
+        totpCode: '123456', 
       });
 
       expect(result.success).toBe(true);
@@ -196,7 +196,7 @@ describe('BootstrapService', () => {
       expect(result.user?.role).toBe('super_admin');
       expect(result.backupCodes).toHaveLength(5);
 
-      // Verify user was created in storage
+      
       const user = await storage.getUserByHandle('admin');
       expect(user).not.toBeNull();
       expect(user?.role).toBe('super_admin');
@@ -206,13 +206,13 @@ describe('BootstrapService', () => {
     it('should reject invalid TOTP code', async () => {
       const result = await service.complete(validState, {
         handle: 'admin',
-        totpCode: '000000', // Our mock rejects this
+        totpCode: '000000', 
       });
 
       expect(result.success).toBe(false);
       expect(result.error).toContain('Invalid TOTP code');
 
-      // Verify user was NOT created
+      
       const user = await storage.getUserByHandle('admin');
       expect(user).toBeNull();
     });
@@ -230,7 +230,7 @@ describe('BootstrapService', () => {
     it('should reject expired state', async () => {
       const expiredState: BootstrapState = {
         ...validState,
-        timestamp: Date.now() - 15 * 60 * 1000, // 15 minutes ago
+        timestamp: Date.now() - 15 * 60 * 1000, 
       };
 
       const result = await service.complete(expiredState, {
@@ -291,10 +291,10 @@ describe('BootstrapService', () => {
 
       const expiredState: BootstrapState = {
         ...state,
-        timestamp: Date.now() - 15 * 60 * 1000, // 15 minutes ago
+        timestamp: Date.now() - 15 * 60 * 1000, 
       };
 
-      expect(service.isStateValid(expiredState, 600000)).toBe(false); // 10 min max age
+      expect(service.isStateValid(expiredState, 600000)).toBe(false); 
     });
 
     it('should return false for invalid state', () => {

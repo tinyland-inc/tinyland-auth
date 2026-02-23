@@ -1,8 +1,8 @@
-/**
- * TOTP Compatibility Layer Unit Tests
- *
- * Tests for the standalone TOTP utility functions (compat layer).
- */
+
+
+
+
+
 
 import { describe, it, expect } from 'vitest';
 import {
@@ -29,7 +29,7 @@ describe('TOTP Compatibility Layer', () => {
 
     it('should generate secrets with sufficient length', () => {
       const secret = generateTOTPSecret();
-      // At least 16 base32 chars = 80 bits of entropy
+      
       expect(secret.length).toBeGreaterThanOrEqual(16);
     });
   });
@@ -101,7 +101,7 @@ describe('TOTP Compatibility Layer', () => {
     });
 
     it('should not contain ambiguous characters', () => {
-      // Generate many passwords and check none contain O, 0, I, l, 1
+      
       for (let i = 0; i < 50; i++) {
         const password = generateTempPassword(16);
         expect(password).not.toMatch(/[OIl01]/);
@@ -113,7 +113,7 @@ describe('TOTP Compatibility Layer', () => {
       for (let i = 0; i < 20; i++) {
         passwords.add(generateTempPassword(12));
       }
-      // All 20 should be unique (collision is astronomically unlikely)
+      
       expect(passwords.size).toBe(20);
     });
   });
