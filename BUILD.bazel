@@ -90,5 +90,5 @@ npm_package(
         ":package.json",
     ],
     package = "@tummycrypt/tinyland-auth",
-    version = "0.2.2",
+    version = "0.3.0",
 )

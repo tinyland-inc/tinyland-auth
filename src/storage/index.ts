@@ -24,3 +24,9 @@ export {
   createFileStorageAdapter,
   type FileStorageConfig,
 } from './file.js';
+
+export {
+  createFixedTenantStorageAdapter,
+  resolveAuthTenantId,
+  type TenantScopedStorage,
+} from './fixedTenant.js';
