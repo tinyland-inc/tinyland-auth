@@ -7,15 +7,15 @@
 
 
 import type { Session, SessionMetadata, SessionUser, AdminUser, SessionConfig } from '../../types/index.js';
-import type { IStorageAdapter } from '../../storage/interface.js';
+import type { SessionStorage } from '../../storage/interface.js';
 
 export interface SessionManagerConfig {
-  storage: IStorageAdapter;
+  storage: SessionStorage;
   config: SessionConfig;
 }
 
 export class SessionManager {
-  private storage: IStorageAdapter;
+  private storage: SessionStorage;
   private config: SessionConfig;
 
   constructor({ storage, config }: SessionManagerConfig) {
@@ -154,7 +154,7 @@ export class SessionManager {
 
 
 export function createSessionManager(
-  storage: IStorageAdapter,
+  storage: SessionStorage,
   config: SessionConfig
 ): SessionManager {
   return new SessionManager({ storage, config });

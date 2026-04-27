@@ -101,6 +101,11 @@ export interface AdminUser {
   lastFailedLoginAt?: string;
   ipAddress?: string;
   userAgent?: string;
+
+  // GitHub OAuth linking
+  githubId?: number | null;
+  githubLogin?: string | null;
+  githubLinkedAt?: string | null;
 }
 
 

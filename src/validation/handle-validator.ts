@@ -9,14 +9,14 @@
 
 
 import { verifyPassword, hashPassword } from '../core/security/password.js';
-import type { IStorageAdapter } from '../storage/interface.js';
+import type { HandleValidationStorage } from '../storage/interface.js';
 
 
 
 
 export interface HandleValidatorConfig {
   
-  storage: IStorageAdapter;
+  storage: HandleValidationStorage;
   
   logger?: (level: string, message: string, data?: Record<string, unknown>) => void;
   

@@ -1,6 +1,7 @@
 {
   "name": "@tummycrypt/tinyland-auth",
-  "version": "0.2.0",
+  "version": "0.2.2",
+  "packageManager": "pnpm@10.13.1",
   "description": "Production-grade authentication system with TOTP, RBAC, and pluggable storage",
   "type": "module",
   "main": "./dist/index.js",
@@ -52,8 +53,9 @@
     "build": "tsc",
     "dev": "tsc --watch",
     "clean": "rm -rf dist",
-    "prepublishOnly": "npm run build",
-    "test": "vitest",
+    "check:package": "publint",
+    "prepublishOnly": "pnpm build && pnpm check:package",
+    "test": "vitest run",
     "test:coverage": "vitest --coverage",
     "typecheck": "tsc --noEmit"
   },
@@ -67,10 +69,13 @@
   ],
   "author": "Tinyland.dev",
   "license": "Zlib AND LicenseRef-Tinyland-Proprietary",
+  "homepage": "https://github.com/tinyland-inc/tinyland-auth",
+  "bugs": {
+    "url": "https://github.com/tinyland-inc/tinyland-auth/issues"
+  },
   "repository": {
     "type": "git",
-    "url": "https://github.com/tinyland-inc/tinyland.dev",
-    "directory": "packages/tinyland-auth"
+    "url": "git+https://github.com/tinyland-inc/tinyland-auth.git"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
@@ -84,6 +89,7 @@
     "@types/node": "^20.0.0",
     "@types/qrcode": "^1.5.5",
     "svelte": "^5.0.0",
+    "publint": "^0.3.18",
     "typescript": "^5.0.0",
     "vitest": "^4.0.0"
   },
@@ -104,7 +110,6 @@
   },
   "publishConfig": {
     "registry": "https://registry.npmjs.org/",
-    "access": "public",
-    "provenance": true
+    "access": "public"
   }
 }

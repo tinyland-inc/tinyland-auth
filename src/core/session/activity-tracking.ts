@@ -10,7 +10,7 @@
 
 
 import type { Session } from '../../types/auth.js';
-import type { IStorageAdapter } from '../../storage/interface.js';
+import type { ActivityTrackingStorage } from '../../storage/interface.js';
 
 
 
@@ -37,7 +37,7 @@ export interface ActivityEvent {
 
 export interface ActivityTrackingConfig {
   
-  storage: IStorageAdapter;
+  storage: ActivityTrackingStorage;
 
   
   logger?: (level: string, message: string, data?: Record<string, unknown>) => void;

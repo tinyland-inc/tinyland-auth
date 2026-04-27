@@ -7,11 +7,11 @@
 
 
 import type { AuditEvent, AuditEventType, AuditSeverity } from '../../types/auth.js';
-import type { IStorageAdapter, AuditEventFilters } from '../../storage/interface.js';
+import type { AuditStorage, AuditEventFilters } from '../../storage/interface.js';
 
 export interface AuditLoggerConfig {
   
-  storage: IStorageAdapter;
+  storage: AuditStorage;
   
   enabled: boolean;
   
@@ -28,7 +28,7 @@ export interface AuditLoggerConfig {
 
 
 export class AuditLogger {
-  private storage: IStorageAdapter;
+  private storage: AuditStorage;
   private enabled: boolean;
   private buffer: Omit<AuditEvent, 'id'>[] = [];
   private flushTimer: ReturnType<typeof setTimeout> | null = null;

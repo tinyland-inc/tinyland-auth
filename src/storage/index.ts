@@ -6,6 +6,13 @@
 
 export {
   type IStorageAdapter,
+  type AdminIdentityStorage,
+  type BootstrapStorage,
+  type HandleValidationStorage,
+  type SessionStorage,
+  type ActivityTrackingStorage,
+  type InvitationStorage,
+  type AuditStorage,
   type AuditEventFilters,
   type StorageAdapterConfig,
 } from './interface.js';
