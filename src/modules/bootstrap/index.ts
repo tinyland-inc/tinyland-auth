@@ -8,7 +8,7 @@
 
 
 
-import type { IStorageAdapter } from '../../storage/interface.js';
+import type { BootstrapStorage } from '../../storage/interface.js';
 import type { AdminUser, EncryptedTOTPSecret } from '../../types/auth.js';
 import type {
   BootstrapRequest,
@@ -24,7 +24,7 @@ import { generateBackupCodes, createBackupCodeSet } from '../../core/backup-code
 
 export interface BootstrapServiceConfig {
   
-  storage: IStorageAdapter;
+  storage: BootstrapStorage;
   
   appName: string;
   

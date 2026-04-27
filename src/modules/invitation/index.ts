@@ -10,12 +10,12 @@ import { randomBytes } from 'crypto';
 import { authenticator } from 'otplib';
 import * as qrcode from 'qrcode';
 import type { AdminInvitation, AdminRole, InvitationConfig } from '../../types/index.js';
-import type { IStorageAdapter } from '../../storage/interface.js';
+import type { InvitationStorage } from '../../storage/interface.js';
 import { canManageRole } from '../../core/permissions/index.js';
 
 export interface InvitationServiceConfig {
   
-  storage: IStorageAdapter;
+  storage: InvitationStorage;
   
   config: InvitationConfig;
   
@@ -52,7 +52,7 @@ export interface CreateInvitationResult {
 
 
 export class InvitationService {
-  private storage: IStorageAdapter;
+  private storage: InvitationStorage;
   private config: InvitationConfig;
   private baseUrl: string;
   private totpIssuer: string;

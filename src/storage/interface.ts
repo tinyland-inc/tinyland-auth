@@ -231,6 +231,73 @@ export interface IStorageAdapter {
   close(): Promise<void>;
 }
 
+export interface AdminIdentityStorage extends Pick<
+  IStorageAdapter,
+  | 'getUser'
+  | 'getUserByHandle'
+  | 'getUserByEmail'
+  | 'getAllUsers'
+  | 'createUser'
+  | 'updateUser'
+  | 'deleteUser'
+  | 'hasUsers'
+> {}
+
+export interface BootstrapStorage extends Pick<
+  IStorageAdapter,
+  | 'hasUsers'
+  | 'createUser'
+  | 'getTOTPSecret'
+  | 'saveTOTPSecret'
+  | 'saveBackupCodes'
+  | 'logAuditEvent'
+> {}
+
+export interface HandleValidationStorage extends Pick<
+  IStorageAdapter,
+  | 'getUserByHandle'
+  | 'getAllUsers'
+  | 'createUser'
+  | 'deleteUser'
+> {}
+
+export interface SessionStorage extends Pick<
+  IStorageAdapter,
+  | 'getSession'
+  | 'getSessionsByUser'
+  | 'getAllSessions'
+  | 'createSession'
+  | 'updateSession'
+  | 'deleteSession'
+  | 'deleteUserSessions'
+  | 'cleanupExpiredSessions'
+> {}
+
+export interface ActivityTrackingStorage extends Pick<
+  IStorageAdapter,
+  | 'getSession'
+  | 'updateSession'
+> {}
+
+export interface InvitationStorage extends Pick<
+  IStorageAdapter,
+  | 'getInvitation'
+  | 'getInvitationById'
+  | 'getAllInvitations'
+  | 'getPendingInvitations'
+  | 'createInvitation'
+  | 'updateInvitation'
+  | 'deleteInvitation'
+  | 'cleanupExpiredInvitations'
+> {}
+
+export interface AuditStorage extends Pick<
+  IStorageAdapter,
+  | 'logAuditEvent'
+  | 'getAuditEvents'
+  | 'getRecentAuditEvents'
+> {}
+
 
 
 
