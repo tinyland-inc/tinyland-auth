@@ -1,41 +1,37 @@
+import { randomBytes } from "crypto";
+import otplib from "otplib";
+import * as qrcode from "qrcode";
+import type {
+  AdminInvitation,
+  AdminRole,
+  InvitationConfig,
+} from "../../types/index.js";
+import type { InvitationStorage } from "../../storage/interface.js";
+import { canManageRole } from "../../core/permissions/index.js";
 
-
-
-
-
-
-
-
-import { randomBytes } from 'crypto';
-import { authenticator } from 'otplib';
-import * as qrcode from 'qrcode';
-import type { AdminInvitation, AdminRole, InvitationConfig } from '../../types/index.js';
-import type { InvitationStorage } from '../../storage/interface.js';
-import { canManageRole } from '../../core/permissions/index.js';
+const { authenticator } = otplib;
 
 export interface InvitationServiceConfig {
-  
   storage: InvitationStorage;
-  
+
   config: InvitationConfig;
-  
+
   baseUrl: string;
-  
+
   totpIssuer?: string;
 }
 
 export interface CreateInvitationOptions {
-  
   role: AdminRole;
-  
+
   createdBy: string;
-  
+
   createdByHandle: string;
-  
+
   expiresInHours?: number;
-  
+
   message?: string;
-  
+
   email?: string;
 }
 
@@ -48,9 +44,6 @@ export interface CreateInvitationResult {
   error?: string;
 }
 
-
-
-
 export class InvitationService {
   private storage: InvitationStorage;
   private config: InvitationConfig;
@@ -61,29 +54,25 @@ export class InvitationService {
     this.storage = serviceConfig.storage;
     this.config = serviceConfig.config;
     this.baseUrl = serviceConfig.baseUrl;
-    this.totpIssuer = serviceConfig.totpIssuer || 'Tinyland.dev';
+    this.totpIssuer = serviceConfig.totpIssuer || "Tinyland.dev";
   }
 
-  
-
-
-  async createInvitation(options: CreateInvitationOptions): Promise<CreateInvitationResult> {
+  async createInvitation(
+    options: CreateInvitationOptions,
+  ): Promise<CreateInvitationResult> {
     try {
-      
-      const token = randomBytes(32).toString('hex');
+      const token = randomBytes(32).toString("hex");
 
-      
       const totpSecret = authenticator.generateSecret();
 
-      
-      const expiresInHours = options.expiresInHours || this.config.defaultExpiryHours;
+      const expiresInHours =
+        options.expiresInHours || this.config.defaultExpiryHours;
       const expiresAt = new Date();
       expiresAt.setHours(expiresAt.getHours() + expiresInHours);
 
-      
-      const invitationData: Omit<AdminInvitation, 'id'> = {
+      const invitationData: Omit<AdminInvitation, "id"> = {
         token,
-        email: options.email || '',
+        email: options.email || "",
         role: options.role,
         createdBy: options.createdBy,
         createdAt: new Date().toISOString(),
@@ -96,18 +85,15 @@ export class InvitationService {
         },
       };
 
-      
       const invitation = await this.storage.createInvitation(invitationData);
 
-      
       const otpauth = authenticator.keyuri(
         `invite-${invitation.id}`,
         `${this.totpIssuer} (Invite)`,
-        totpSecret
+        totpSecret,
       );
       const qrCode = await qrcode.toDataURL(otpauth);
 
-      
       const inviteUrl = `${this.baseUrl}/admin/accept-invite?token=${token}`;
 
       return {
@@ -118,37 +104,29 @@ export class InvitationService {
         qrCode,
       };
     } catch (error) {
-      console.error('[InvitationService] Create error:', error);
+      console.error("[InvitationService] Create error:", error);
       return {
         success: false,
-        error: 'Failed to create invitation',
+        error: "Failed to create invitation",
       };
     }
   }
-
-  
-
 
   async getInvitation(token: string): Promise<AdminInvitation | null> {
     const invitation = await this.storage.getInvitation(token);
 
     if (!invitation) return null;
 
-    
     if (new Date(invitation.expiresAt) < new Date()) {
       return null;
     }
 
-    
     if (invitation.usedAt) {
       return null;
     }
 
     return invitation;
   }
-
-  
-
 
   async markAsUsed(token: string, usedBy: string): Promise<boolean> {
     try {
@@ -163,22 +141,13 @@ export class InvitationService {
     }
   }
 
-  
-
-
   async revokeInvitation(token: string): Promise<boolean> {
     return this.storage.deleteInvitation(token);
   }
 
-  
-
-
   async listPendingInvitations(): Promise<AdminInvitation[]> {
     return this.storage.getPendingInvitations();
   }
-
-  
-
 
   async getStatistics(): Promise<{
     total: number;
@@ -191,23 +160,22 @@ export class InvitationService {
 
     return {
       total: all.length,
-      pending: all.filter(i => new Date(i.expiresAt) > now && !i.usedAt).length,
-      expired: all.filter(i => new Date(i.expiresAt) <= now && !i.usedAt).length,
-      used: all.filter(i => i.usedAt).length,
+      pending: all.filter((i) => new Date(i.expiresAt) > now && !i.usedAt)
+        .length,
+      expired: all.filter((i) => new Date(i.expiresAt) <= now && !i.usedAt)
+        .length,
+      used: all.filter((i) => i.usedAt).length,
     };
   }
-
-  
-
 
   async cleanupExpired(): Promise<number> {
     return this.storage.cleanupExpiredInvitations();
   }
 
-  
-
-
-  async extendInvitation(token: string, additionalHours: number): Promise<boolean> {
+  async extendInvitation(
+    token: string,
+    additionalHours: number,
+  ): Promise<boolean> {
     const invitation = await this.storage.getInvitation(token);
     if (!invitation || invitation.usedAt) return false;
 
@@ -224,17 +192,13 @@ export class InvitationService {
     }
   }
 
-  
-
-
   canInviteForRole(creatorRole: AdminRole, targetRole: AdminRole): boolean {
     return canManageRole(creatorRole, targetRole);
   }
 }
 
-
-
-
-export function createInvitationService(config: InvitationServiceConfig): InvitationService {
+export function createInvitationService(
+  config: InvitationServiceConfig,
+): InvitationService {
   return new InvitationService(config);
 }
