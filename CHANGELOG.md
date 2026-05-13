@@ -1,5 +1,13 @@
 # @tummycrypt/tinyland-auth
 
+## 0.3.3
+
+### Patch Changes
+
+- Make TOTP and invitation exports compatible with both legacy `otplib` v12
+  authenticator exports and modern `otplib` v13 functional exports used by
+  SvelteKit SSR consumers.
+
 ## 0.3.2
 
 ### Patch Changes

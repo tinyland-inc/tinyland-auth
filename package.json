@@ -1,6 +1,6 @@
 {
   "name": "@tummycrypt/tinyland-auth",
-  "version": "0.3.2",
+  "version": "0.3.3",
   "packageManager": "pnpm@10.13.1",
   "description": "Production-grade authentication system with TOTP, RBAC, and pluggable storage",
   "type": "module",

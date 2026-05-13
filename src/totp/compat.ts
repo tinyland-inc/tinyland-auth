@@ -1,18 +1,21 @@
-import otplib from "otplib";
 import * as crypto from "crypto";
 import * as QRCode from "qrcode";
+import {
+  configureAuthenticator,
+  generateAuthenticatorSecret,
+  generateAuthenticatorToken,
+  getAuthenticatorStep,
+} from "./otplib-compat.js";
 
-const { authenticator } = otplib;
-
-authenticator.options = {
+configureAuthenticator({
   step: 30,
   window: 1,
   digits: 6,
-};
+});
 
 export function generateTOTPSecret(): string {
   try {
-    const secret = authenticator.generateSecret();
+    const secret = generateAuthenticatorSecret();
     return secret;
   } catch (_error) {
     throw new Error("Failed to generate secure TOTP secret");
@@ -89,11 +92,11 @@ export function generateTOTPToken(secret: string): string {
     throw new Error("Invalid base32 secret");
   }
 
-  return authenticator.generate(secret);
+  return generateAuthenticatorToken(secret);
 }
 
 export function getTOTPTimeRemaining(): number {
-  const step = authenticator.options.step || 30;
+  const step = getAuthenticatorStep();
   const now = Math.floor(Date.now() / 1000);
   return step - (now % step);
 }
