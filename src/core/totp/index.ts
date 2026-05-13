@@ -1,4 +1,3 @@
-import otplib from "otplib";
 import * as qrcode from "qrcode";
 import {
   createCipheriv,
@@ -12,10 +11,15 @@ import type {
   TOTPConfig,
 } from "../../types/index.js";
 import { timingSafeVerify } from "../security/index.js";
+import {
+  configureAuthenticator,
+  generateAuthenticatorToken,
+  generateAuthenticatorSecret,
+  generateAuthenticatorUri,
+  verifyAuthenticatorToken,
+} from "../../totp/otplib-compat.js";
 
-const { authenticator } = otplib;
-
-authenticator.options = { window: 1 };
+configureAuthenticator({ window: 1 });
 
 const ALGORITHM = "aes-256-gcm";
 const SALT_LENGTH = 32;
@@ -46,8 +50,8 @@ export class TOTPService {
   }
 
   async generateSecret(handle: string, email: string): Promise<TOTPSecret> {
-    const secret = authenticator.generateSecret();
-    const otpauth = authenticator.keyuri(email, this.issuer, secret);
+    const secret = generateAuthenticatorSecret();
+    const otpauth = generateAuthenticatorUri(email, this.issuer, secret);
     const qrCodeUrl = await qrcode.toDataURL(otpauth);
 
     return {
@@ -111,23 +115,20 @@ export class TOTPService {
     return await timingSafeVerify(async () => {
       if (!secretOrNull) {
         const dummySecret = "JBSWY3DPEHPK3PXP";
-        authenticator.verify({ token: cleanToken, secret: dummySecret });
+        await verifyAuthenticatorToken(dummySecret, cleanToken);
         return false;
       }
 
-      return authenticator.verify({
-        token: cleanToken,
-        secret: secretOrNull.secret,
-      });
+      return await verifyAuthenticatorToken(secretOrNull.secret, cleanToken);
     }, 150);
   }
 
   generateToken(secret: TOTPSecret): string {
-    return authenticator.generate(secret.secret);
+    return generateAuthenticatorToken(secret.secret);
   }
 
   async generateQRCode(secret: TOTPSecret): Promise<string> {
-    const otpauth = authenticator.keyuri(
+    const otpauth = generateAuthenticatorUri(
       secret.email,
       this.issuer,
       secret.secret,

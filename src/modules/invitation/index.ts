@@ -1,5 +1,4 @@
 import { randomBytes } from "crypto";
-import otplib from "otplib";
 import * as qrcode from "qrcode";
 import type {
   AdminInvitation,
@@ -8,8 +7,10 @@ import type {
 } from "../../types/index.js";
 import type { InvitationStorage } from "../../storage/interface.js";
 import { canManageRole } from "../../core/permissions/index.js";
-
-const { authenticator } = otplib;
+import {
+  generateAuthenticatorSecret,
+  generateAuthenticatorUri,
+} from "../../totp/otplib-compat.js";
 
 export interface InvitationServiceConfig {
   storage: InvitationStorage;
@@ -63,7 +64,7 @@ export class InvitationService {
     try {
       const token = randomBytes(32).toString("hex");
 
-      const totpSecret = authenticator.generateSecret();
+      const totpSecret = generateAuthenticatorSecret();
 
       const expiresInHours =
         options.expiresInHours || this.config.defaultExpiryHours;
@@ -87,7 +88,7 @@ export class InvitationService {
 
       const invitation = await this.storage.createInvitation(invitationData);
 
-      const otpauth = authenticator.keyuri(
+      const otpauth = generateAuthenticatorUri(
         `invite-${invitation.id}`,
         `${this.totpIssuer} (Invite)`,
         totpSecret,
