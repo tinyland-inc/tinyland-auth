@@ -1,5 +1,12 @@
 # @tummycrypt/tinyland-auth
 
+## 0.3.1
+
+### Patch Changes
+
+- Fix Node ESM consumption of the TOTP and invitation exports by importing the
+  CommonJS `otplib` package through its default namespace.
+
 ## 0.2.2
 
 ### Patch Changes
