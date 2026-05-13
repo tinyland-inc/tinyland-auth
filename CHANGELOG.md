@@ -1,5 +1,12 @@
 # @tummycrypt/tinyland-auth
 
+## 0.3.2
+
+### Patch Changes
+
+- Disable package-level npm provenance so the self-hosted Bazel package publish
+  lane can publish without npm rejecting the runner environment.
+
 ## 0.3.1
 
 ### Patch Changes
