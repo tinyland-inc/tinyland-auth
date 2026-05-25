@@ -19,6 +19,17 @@ export type AdminRole =
   | 'member'
   | 'viewer';
 
+export const ADMIN_ROLES = [
+  'super_admin',
+  'admin',
+  'moderator',
+  'editor',
+  'event_manager',
+  'contributor',
+  'member',
+  'viewer',
+] as const satisfies readonly AdminRole[];
+
 
 
 
@@ -47,6 +58,10 @@ export const ROLE_HIERARCHY: Record<AdminRole, number> = {
   member: 30,
   viewer: 10,
 };
+
+export const ROLE_MANAGEMENT_ORDER: readonly AdminRole[] = [
+  ...ADMIN_ROLES,
+].sort((left, right) => ROLE_HIERARCHY[right] - ROLE_HIERARCHY[left]);
 
 
 
@@ -387,7 +402,7 @@ export function isAdminUser(obj: unknown): obj is AdminUser {
 }
 
 export function isValidAdminRole(role: string): role is AdminRole {
-  return Object.keys(ROLE_HIERARCHY).includes(role);
+  return ADMIN_ROLES.includes(role as AdminRole);
 }
 
 export function hasHigherRole(userRole: AdminRole, targetRole: AdminRole): boolean {
