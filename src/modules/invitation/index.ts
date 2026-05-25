@@ -73,7 +73,7 @@ export class InvitationService {
 
       const invitationData: Omit<AdminInvitation, "id"> = {
         token,
-        email: options.email || "",
+        email: options.email,
         role: options.role,
         createdBy: options.createdBy,
         createdAt: new Date().toISOString(),

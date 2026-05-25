@@ -49,9 +49,10 @@ export class TOTPService {
     this.testCode = config.testCode;
   }
 
-  async generateSecret(handle: string, email: string): Promise<TOTPSecret> {
+  async generateSecret(handle: string, email?: string): Promise<TOTPSecret> {
     const secret = generateAuthenticatorSecret();
-    const otpauth = generateAuthenticatorUri(email, this.issuer, secret);
+    const accountLabel = email || handle;
+    const otpauth = generateAuthenticatorUri(accountLabel, this.issuer, secret);
     const qrCodeUrl = await qrcode.toDataURL(otpauth);
 
     return {
@@ -129,7 +130,7 @@ export class TOTPService {
 
   async generateQRCode(secret: TOTPSecret): Promise<string> {
     const otpauth = generateAuthenticatorUri(
-      secret.email,
+      secret.email || secret.handle,
       this.issuer,
       secret.secret,
     );

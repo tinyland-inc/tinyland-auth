@@ -256,7 +256,7 @@ export class BootstrapService {
       
       const user = await this.config.storage.createUser({
         handle: state.handle,
-        email: state.email || `${state.handle}@localhost`,
+        email: state.email,
         displayName: state.displayName,
         passwordHash: state.passwordHash,
         role: 'super_admin',

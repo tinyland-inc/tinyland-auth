@@ -210,7 +210,7 @@ export interface SessionTerminateResponse {
 
 export interface InvitationCreateRequest {
   
-  email: string;
+  email?: string;
   
   role: AdminRole;
   
