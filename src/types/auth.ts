@@ -56,7 +56,7 @@ export interface AdminUser {
   
   id: string;
   handle: string;
-  email: string;
+  email?: string;
   displayName?: string;
 
   
@@ -165,7 +165,7 @@ export interface SessionMetadata {
 
 export interface TOTPSecret {
   handle: string;
-  email: string;
+  email?: string;
   secret: string;
   qrCodeUrl?: string;
   createdAt: Date;
@@ -226,7 +226,7 @@ export interface EncryptedBackupCode {
 export interface AdminInvitation {
   id: string;
   token: string;
-  email: string;
+  email?: string;
   role: AdminRole;
   createdBy: string;
   createdAt: string;
@@ -380,7 +380,6 @@ export function isAdminUser(obj: unknown): obj is AdminUser {
     obj !== null &&
     typeof (obj as AdminUser).id === 'string' &&
     typeof (obj as AdminUser).handle === 'string' &&
-    typeof (obj as AdminUser).email === 'string' &&
     typeof (obj as AdminUser).passwordHash === 'string' &&
     typeof (obj as AdminUser).role === 'string' &&
     typeof (obj as AdminUser).isActive === 'boolean'

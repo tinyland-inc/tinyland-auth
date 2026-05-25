@@ -44,7 +44,11 @@ vitest_bin.vitest_test(
         "--config",
         "$(rootpath vitest.config.ts)",
     ],
-    data = glob(["src/**/*.ts"]) + glob(["tests/**/*.ts"]) + [
+    data = (
+        glob(["src/**/*.ts"]) +
+        glob(["tests/**/*.ts"]) +
+        glob(["examples/**/*.ts"])
+    ) + [
         ":node_modules",
         ":node_modules/vitest",
         "tsconfig.json",

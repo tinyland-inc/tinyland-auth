@@ -26,3 +26,19 @@ Implement `IStorageAdapter` for your backend:
 
 - **Built-in**: `MemoryStorageAdapter`, `FileStorageAdapter`
 - **Separate packages**: `@tummycrypt/tinyland-auth-pg` (PostgreSQL), `@tummycrypt/tinyland-auth-redis` (Upstash Redis)
+
+## Tinyland Databaseless MVP
+
+Tinyland's intended app shape is handle-first and email-less by default:
+
+- directory actors are keyed by handle
+- email is optional contact metadata, not identity authority
+- sessions bind capabilities to directory actors
+- FingerprintJS and Tempo are evidence/overlay planes, not auth credentials
+- GitHub OAuth is an app-local provider handoff that creates a normal package
+  session after provider policy passes
+
+See the
+[Tinyland databaseless auth MVP](https://github.com/tinyland-inc/tinyland-auth/blob/main/docs/tinyland-databaseless-auth-mvp.md)
+and the
+[executable example](https://github.com/tinyland-inc/tinyland-auth/blob/main/examples/tinyland-databaseless-auth-mvp.ts).
