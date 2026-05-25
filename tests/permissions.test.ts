@@ -6,6 +6,16 @@
 
 import { describe, it, expect } from 'vitest';
 import {
+  ADMIN_ROLES,
+  ROLE_HIERARCHY,
+  ROLE_MANAGEMENT_ORDER,
+  hasEqualOrHigherRole,
+  hasHigherRole,
+  isValidAdminRole,
+  type AdminRole,
+  type AdminUser,
+} from '../src/types/auth.js';
+import {
   hasPermission,
   hasAnyPermission,
   hasAllPermissions,
@@ -16,8 +26,7 @@ import {
   getAllowedVisibilityOptions,
   isMemberRole,
 } from '../src/core/permissions/index.js';
-import { PERMISSIONS } from '../src/types/permissions.js';
-import type { AdminUser } from '../src/types/auth.js';
+import { PERMISSIONS, ROLE_PERMISSIONS } from '../src/types/permissions.js';
 
 
 const createTestUser = (role: string, id = 'user-1'): AdminUser => ({
@@ -44,6 +53,72 @@ const member = createTestUser('member');
 const viewer = createTestUser('viewer');
 
 describe('Permission Functions', () => {
+  describe('role authority', () => {
+    const expectedManagementOrder: AdminRole[] = [
+      'super_admin',
+      'admin',
+      'moderator',
+      'editor',
+      'event_manager',
+      'contributor',
+      'member',
+      'viewer',
+    ];
+
+    it('exports the complete supported role set', () => {
+      expect(ADMIN_ROLES).toEqual(expectedManagementOrder);
+      for (const role of expectedManagementOrder) {
+        expect(isValidAdminRole(role)).toBe(true);
+      }
+      expect(isValidAdminRole('owner')).toBe(false);
+    });
+
+    it('derives role-management order from ROLE_HIERARCHY', () => {
+      expect(ROLE_MANAGEMENT_ORDER).toEqual(expectedManagementOrder);
+
+      for (const [index, role] of ROLE_MANAGEMENT_ORDER.entries()) {
+        const lowerRole = ROLE_MANAGEMENT_ORDER[index + 1];
+        if (!lowerRole) continue;
+
+        expect(ROLE_HIERARCHY[role]).toBeGreaterThan(
+          ROLE_HIERARCHY[lowerRole],
+        );
+        expect(hasHigherRole(role, lowerRole)).toBe(true);
+        expect(hasEqualOrHigherRole(role, lowerRole)).toBe(true);
+      }
+    });
+
+    it('uses ROLE_HIERARCHY as the canManageRole authority', () => {
+      for (const actorRole of ADMIN_ROLES) {
+        for (const targetRole of ADMIN_ROLES) {
+          expect(canManageRole(actorRole, targetRole)).toBe(
+            ROLE_HIERARCHY[actorRole] > ROLE_HIERARCHY[targetRole],
+          );
+        }
+      }
+
+      expect(canManageRole('super-admin', 'event-manager')).toBe(true);
+      expect(canManageRole('editor', 'moderator')).toBe(false);
+      expect(canManageRole('moderator', 'editor')).toBe(true);
+      expect(canManageRole('admin', 'owner')).toBe(false);
+    });
+
+    it('documents permissions as a capability matrix, not a strict superset hierarchy', () => {
+      expect(ROLE_PERMISSIONS.event_manager).toContain(
+        PERMISSIONS.ADMIN_EVENTS_MANAGE,
+      );
+      expect(ROLE_PERMISSIONS.event_manager).not.toContain(
+        PERMISSIONS.ADMIN_CONTENT_VIEW,
+      );
+      expect(ROLE_PERMISSIONS.contributor).toContain(
+        PERMISSIONS.ADMIN_CONTENT_VIEW,
+      );
+      expect(ROLE_PERMISSIONS.contributor).not.toContain(
+        PERMISSIONS.ADMIN_EVENTS_MANAGE,
+      );
+    });
+  });
+
   describe('hasPermission', () => {
     it('should return true for super_admin with any permission', () => {
       expect(hasPermission(superAdmin, PERMISSIONS.ADMIN_ACCESS)).toBe(true);

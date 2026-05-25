@@ -42,3 +42,9 @@ See the
 [Tinyland databaseless auth MVP](https://github.com/tinyland-inc/tinyland-auth/blob/main/docs/tinyland-databaseless-auth-mvp.md)
 and the
 [executable example](https://github.com/tinyland-inc/tinyland-auth/blob/main/examples/tinyland-databaseless-auth-mvp.ts).
+
+## RBAC
+
+Role management order and permission checks are intentionally separate. See
+[the RBAC matrix](https://github.com/tinyland-inc/tinyland-auth/blob/main/docs/rbac-matrix.md)
+for the package-owned matrix and downstream test guidance.

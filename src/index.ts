@@ -32,8 +32,10 @@
 
 
 export {
+  ADMIN_ROLES,
   AdminRole,
   ROLE_HIERARCHY,
+  ROLE_MANAGEMENT_ORDER,
   AuditEventType,
   AuthErrorCode,
   isAdminUser,

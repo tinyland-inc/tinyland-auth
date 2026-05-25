@@ -7,7 +7,7 @@
 
 
 
-import type { AdminRole, AdminUser } from '../../types/auth.js';
+import { ROLE_HIERARCHY, isValidAdminRole, type AdminRole, type AdminUser } from '../../types/auth.js';
 import { PERMISSIONS, ROLE_PERMISSIONS, type ContentVisibility } from '../../types/permissions.js';
 
 
@@ -93,32 +93,17 @@ export function getUserPermissions(user: AdminUser): string[] {
 
 
 export function canManageRole(actorRole: AdminRole | string, targetRole: AdminRole | string): boolean {
-  const normalizeRole = (role: AdminRole | string): string => {
-    return String(role).toLowerCase().replace(/-/g, '_');
-  };
-
   const normalizedActor = normalizeRole(actorRole);
   const normalizedTarget = normalizeRole(targetRole);
 
-  const roleHierarchy = [
-    'super_admin',
-    'admin',
-    'editor',
-    'event_manager',
-    'moderator',
-    'contributor',
-    'member',
-    'viewer',
-  ];
-
-  const actorIndex = roleHierarchy.indexOf(normalizedActor);
-  const targetIndex = roleHierarchy.indexOf(normalizedTarget);
-
-  if (actorIndex === -1 || targetIndex === -1) {
+  if (
+    !isValidAdminRole(normalizedActor) ||
+    !isValidAdminRole(normalizedTarget)
+  ) {
     return false;
   }
 
-  return actorIndex < targetIndex;
+  return ROLE_HIERARCHY[normalizedActor] > ROLE_HIERARCHY[normalizedTarget];
 }
 
 
