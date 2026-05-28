@@ -10,6 +10,20 @@ Executable proof lives in
 and is covered by
 [`tests/databaseless-mvp.test.ts`](../tests/databaseless-mvp.test.ts).
 
+## Bazel And Package Proof
+
+Package adoption is proved through the Bazel package lane, not by treating a
+local pnpm workspace copy as release truth. The CI and publish workflows run on
+the repo-owned GloriousFlywheel runner lane and validate
+`//:pkg //:test //:typecheck`; `//:test` includes the MVP example plus the
+databaseless auth tests.
+
+The runtime TypeScript package remains `@tummycrypt/tinyland-auth`. npmjs
+publication is disabled for this repo's workflows; the GitHub Packages mirror is
+`@tinyland-inc/tinyland-auth` because GitHub Packages scopes are owner-bound.
+Bazel consumers should use the Tinyland Bazel registry / BCR module path that
+corresponds to the released package artifact.
+
 ## Authority Planes
 
 | Plane | Package or repo | Responsibility |
@@ -94,8 +108,8 @@ The downstream app should add tests that prove:
 - changed fingerprints do not invalidate valid sessions
 - invite routes use package RBAC policy instead of route-hardcoded role lists
 - GitHub OAuth creates a package session only after app-local provider checks
-- `MODULE.bazel` proves released auth-adjacent modules, not only pnpm
-  workspace resolution
+- `MODULE.bazel` and Bazel package targets prove released auth-adjacent modules,
+  not only pnpm workspace resolution
 
 ## Related Linear Work
 

@@ -1,5 +1,14 @@
 # @tummycrypt/tinyland-auth
 
+## Unreleased
+
+### Patch Changes
+
+- Clarify the package release authority: the TypeScript import API remains
+  `@tummycrypt/tinyland-auth`, npmjs publication is disabled, GitHub Packages
+  uses the `@tinyland-inc/tinyland-auth` mirror coordinate, and Bazel targets
+  provide the package proof lane.
+
 ## 0.3.3
 
 ### Patch Changes

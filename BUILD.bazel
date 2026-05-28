@@ -47,10 +47,16 @@ vitest_bin.vitest_test(
     data = (
         glob(["src/**/*.ts"]) +
         glob(["tests/**/*.ts"]) +
-        glob(["examples/**/*.ts"])
+        glob(["examples/**/*.ts"]) +
+        glob(["docs/**/*.md"])
     ) + [
+        ".github/workflows/ci.yml",
+        ".github/workflows/publish.yml",
+        "BUILD.bazel",
+        "README.md",
         ":node_modules",
         ":node_modules/vitest",
+        "package.json",
         "tsconfig.json",
         "vitest.config.ts",
     ],
