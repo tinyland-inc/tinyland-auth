@@ -2,11 +2,22 @@
 
 Production-grade authentication system with TOTP, RBAC, and pluggable storage.
 
-## Install
+## Consumption And Release Authority
 
-```sh
-pnpm add @tummycrypt/tinyland-auth
-```
+The TypeScript import API stays under `@tummycrypt/tinyland-auth`. Tinyland's
+current release authority for this repo is Bazel-first:
+
+- CI validates the package through a repo-owned GloriousFlywheel runner lane and
+  `//:pkg //:test //:typecheck`.
+- npmjs publication is disabled in package workflows.
+- GitHub Packages mirror publication uses `@tinyland-inc/tinyland-auth`, because
+  GitHub Packages npm scopes are owner-bound.
+- Bazel consumers should depend through the Tinyland Bazel registry / BCR module
+  path instead of relying on a workspace-local package copy.
+
+`pnpm add @tummycrypt/tinyland-auth` is valid only when the consumer is
+configured for a registry that intentionally serves the `@tummycrypt` package
+scope. It is not the current Tinyland publication authority for this repo.
 
 ## Exports
 
