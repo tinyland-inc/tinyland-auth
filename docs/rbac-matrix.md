@@ -39,13 +39,21 @@ Important rule: do not assert that every higher management role has a strict
 permission superset of every lower role. Product roles are allowed to be
 capability-specific.
 
+Since TIN-2435 (operator-ratified 2026-07-04) the matrix additionally
+guarantees a floor: every role ranked at or above `member` holds
+`MEMBER_SELF_SERVICE_CORE` (`admin.access`, `admin.content.view`,
+`admin.events.view` -- the `member` row, by construction). See
+[role-charter.md](./role-charter.md) for the full two-axis charter and the
+P1/P2/P3 invariants.
+
 Examples:
 
 - `event_manager` has `admin.events.manage`.
-- `event_manager` does not get content-view permission through
-  `ROLE_PERMISSIONS`.
+- `editor` outranks `event_manager` but does not get event-management
+  permission through `ROLE_PERMISSIONS`.
 - `contributor` has `admin.content.view`.
 - `contributor` does not get event-management permission.
+- `admin` outranks `moderator` but does not get `admin.content.moderate`.
 - `super_admin` is the exception: `hasPermission()` grants it every permission.
 
 ## Downstream Test Guidance

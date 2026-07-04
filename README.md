@@ -58,4 +58,31 @@ and the
 
 Role management order and permission checks are intentionally separate. See
 [the RBAC matrix](https://github.com/tinyland-inc/tinyland-auth/blob/main/docs/rbac-matrix.md)
-for the package-owned matrix and downstream test guidance.
+for the package-owned matrix and downstream test guidance, and
+[the role charter](https://github.com/tinyland-inc/tinyland-auth/blob/main/docs/role-charter.md)
+for the two-axis model and the P1/P2/P3 invariants.
+
+### Role x feature charter (operator-ratified 2026-07-04, TIN-2435)
+
+Roles live on two axes: a **governance spine** (`viewer -> member ->
+moderator -> admin -> super_admin`, totally ordered by `ROLE_HIERARCHY`,
+governs who manages whom) and horizontal **feature capability**
+(`ROLE_PERMISSIONS`, an intentional lattice -- capabilities do NOT nest by
+rank; TIN-1606 precedent).
+
+| Role | Axis | Feature charter |
+| --- | --- | --- |
+| `super_admin` | governance-spine | System owner; every permission. |
+| `admin` | governance-spine | General administration across domains. |
+| `moderator` | governance-spine | Fedi / community moderation. |
+| `editor` | specialist | Blog editorial. |
+| `event_manager` | specialist | Events / calendaring. |
+| `contributor` | specialist | Drafts / submissions. |
+| `member` | governance-spine | Self-service core (`MEMBER_SELF_SERVICE_CORE`). |
+| `viewer` | governance-spine | Read-only admin surface. |
+
+Every role at or above `member` holds `MEMBER_SELF_SERVICE_CORE`
+(invariant P2), and every `can*` predicate derives from `ROLE_PERMISSIONS`
+-- there are no hand-maintained role arrays. Machine-readable charter:
+`ROLE_CHARTER` and `PERMISSION_FEATURE_DOMAIN` in
+`src/types/permissions.ts`.

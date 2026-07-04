@@ -103,18 +103,24 @@ describe('Permission Functions', () => {
       expect(canManageRole('admin', 'owner')).toBe(false);
     });
 
-    it('documents permissions as a capability matrix, not a strict superset hierarchy', () => {
+    it('documents permissions as a capability lattice, not a strict superset hierarchy', () => {
+      // TIN-1606 (ratified product policy): specialist capabilities do not
+      // nest across the governance order. contributor never inherits event
+      // management from the adjacent event_manager rank.
       expect(ROLE_PERMISSIONS.event_manager).toContain(
         PERMISSIONS.ADMIN_EVENTS_MANAGE,
-      );
-      expect(ROLE_PERMISSIONS.event_manager).not.toContain(
-        PERMISSIONS.ADMIN_CONTENT_VIEW,
       );
       expect(ROLE_PERMISSIONS.contributor).toContain(
         PERMISSIONS.ADMIN_CONTENT_VIEW,
       );
       expect(ROLE_PERMISSIONS.contributor).not.toContain(
         PERMISSIONS.ADMIN_EVENTS_MANAGE,
+      );
+      // TIN-2435 P2: event_manager ranks above member, so it now holds the
+      // member self-service core, including admin.content.view. The
+      // TIN-1606 principle stands via manage-level capabilities.
+      expect(ROLE_PERMISSIONS.event_manager).toContain(
+        PERMISSIONS.ADMIN_CONTENT_VIEW,
       );
     });
   });
