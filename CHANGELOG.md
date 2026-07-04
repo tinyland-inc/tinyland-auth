@@ -1,6 +1,54 @@
 # @tummycrypt/tinyland-auth
 
-## Unreleased
+## 0.4.0
+
+### Minor Changes
+
+- RBAC SSOT hardening (TIN-2435, operator-ratified 2026-07-04; precedent
+  TIN-1606).
+
+  **New exports**: `MEMBER_SELF_SERVICE_CORE` (defined as
+  `ROLE_PERMISSIONS.member` by construction: `admin.access`,
+  `admin.content.view`, `admin.events.view`), `ROLE_CHARTER` (two-axis
+  role tags: governance-spine | specialist, with `ROLE_HIERARCHY` ranks),
+  `FEATURE_DOMAINS` and `PERMISSION_FEATURE_DOMAIN` (feature-domain
+  registry over the permission vocabulary), plus types `FeatureDomain`,
+  `RoleAxis`, `RoleCharterEntry`.
+
+  **P2 data reconciliation** (behavior change: view-level grants). Every
+  role ranked at or above `member` now holds the member self-service core:
+
+  - `moderator` gains `admin.events.view`
+  - `editor` gains `admin.events.view`
+  - `contributor` gains `admin.events.view`
+  - `event_manager` gains `admin.content.view`
+
+  **New permission strings** (behavior change: vocabulary additions so
+  `can*` predicates derive from `ROLE_PERMISSIONS` instead of the
+  hand-maintained role arrays — the tinyland.dev#628 anti-pattern class):
+
+  - `admin.content.publish` → contributor, event_manager, editor,
+    moderator, admin, super_admin (backs `canCreatePublicContent`)
+  - `admin.content.media_create` → contributor, editor, admin,
+    super_admin (backs `canCreateVideos`)
+  - `admin.content.delete` → admin, super_admin (backs `canDeletePosts`,
+    `canDeleteVideos`, `canDeleteContent`)
+  - `admin.events.delete` → admin, super_admin (backs `canDeleteEvents`)
+
+  **Predicate derivation**: every `can*` predicate now derives from
+  `ROLE_PERMISSIONS`. The full role × predicate matrix is locked in
+  `tests/rbac-invariants.test.ts`. Intentional behavior deltas (P2
+  member-core flow-through; everything else is cell-identical):
+
+  - `canCreateEvents` now true for `moderator`, `editor`, `contributor`
+  - `canDeleteOwnContent` now true for `moderator`
+
+  **Invariants**: deterministic, exhaustive tests for P1 (management order
+  is `ROLE_HIERARCHY`, all 64 pairs), P2 (member self-service floor), P3
+  (feature-domain registry covers the granted vocabulary exactly), plus
+  pinned lattice counterexamples documenting that chain-monotonicity is
+  NOT an invariant (ratified: TIN-1606, TIN-2435). Docs:
+  `docs/role-charter.md`.
 
 ### Patch Changes
 

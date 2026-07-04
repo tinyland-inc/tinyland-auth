@@ -1,10 +1,7 @@
 
 
-
-
-
-
 import type { AdminRole } from './auth.js';
+import { ROLE_HIERARCHY } from './auth.js';
 
 
 
@@ -15,10 +12,14 @@ export type AdminPermission =
   | 'admin.users.manage'
   | 'admin.users.delete'
   | 'admin.content.view'
+  | 'admin.content.publish'
+  | 'admin.content.media_create'
   | 'admin.content.manage'
   | 'admin.content.moderate'
+  | 'admin.content.delete'
   | 'admin.events.view'
   | 'admin.events.manage'
+  | 'admin.events.delete'
   | 'admin.analytics.view'
   | 'admin.analytics.export'
   | 'admin.settings.view'
@@ -37,10 +38,14 @@ export const PERMISSIONS = {
   ADMIN_USERS_MANAGE: 'admin.users.manage',
   ADMIN_USERS_DELETE: 'admin.users.delete',
   ADMIN_CONTENT_VIEW: 'admin.content.view',
+  ADMIN_CONTENT_PUBLISH: 'admin.content.publish',
+  ADMIN_CONTENT_MEDIA_CREATE: 'admin.content.media_create',
   ADMIN_CONTENT_MANAGE: 'admin.content.manage',
   ADMIN_CONTENT_MODERATE: 'admin.content.moderate',
+  ADMIN_CONTENT_DELETE: 'admin.content.delete',
   ADMIN_EVENTS_VIEW: 'admin.events.view',
   ADMIN_EVENTS_MANAGE: 'admin.events.manage',
+  ADMIN_EVENTS_DELETE: 'admin.events.delete',
   ADMIN_ANALYTICS_VIEW: 'admin.analytics.view',
   ADMIN_ANALYTICS_EXPORT: 'admin.analytics.export',
   ADMIN_SETTINGS_VIEW: 'admin.settings.view',
@@ -51,9 +56,12 @@ export const PERMISSIONS = {
   ADMIN_LOGS_EXPORT: 'admin.logs.export',
 } as const;
 
-
-
-
+// ROLE_PERMISSIONS is the single source of truth for role capabilities.
+// It is an INTENTIONAL LATTICE (operator-ratified, TIN-2435; precedent
+// TIN-1606): governance rank (ROLE_HIERARCHY) orders who manages whom,
+// while capabilities are feature-scoped and do NOT nest by rank.
+// Invariant P2 (TIN-2435): every role ranked at or above `member` holds
+// MEMBER_SELF_SERVICE_CORE (the member row) as a floor.
 export const ROLE_PERMISSIONS: Record<AdminRole, string[]> = {
   super_admin: Object.values(PERMISSIONS),
 
@@ -62,40 +70,58 @@ export const ROLE_PERMISSIONS: Record<AdminRole, string[]> = {
     PERMISSIONS.ADMIN_USERS_VIEW,
     PERMISSIONS.ADMIN_USERS_MANAGE,
     PERMISSIONS.ADMIN_CONTENT_VIEW,
+    PERMISSIONS.ADMIN_CONTENT_PUBLISH,
+    PERMISSIONS.ADMIN_CONTENT_MEDIA_CREATE,
     PERMISSIONS.ADMIN_CONTENT_MANAGE,
+    PERMISSIONS.ADMIN_CONTENT_DELETE,
     PERMISSIONS.ADMIN_EVENTS_VIEW,
     PERMISSIONS.ADMIN_EVENTS_MANAGE,
+    PERMISSIONS.ADMIN_EVENTS_DELETE,
     PERMISSIONS.ADMIN_ANALYTICS_VIEW,
     PERMISSIONS.ADMIN_SETTINGS_VIEW,
+    PERMISSIONS.ADMIN_LOGS_VIEW,
+  ],
+
+  moderator: [
+    PERMISSIONS.ADMIN_ACCESS,
+    PERMISSIONS.ADMIN_CONTENT_VIEW,
+    PERMISSIONS.ADMIN_CONTENT_PUBLISH,
+    PERMISSIONS.ADMIN_CONTENT_MODERATE,
+    PERMISSIONS.ADMIN_USERS_VIEW,
+    // P2 reconciliation (TIN-2435): member self-service core floor.
+    PERMISSIONS.ADMIN_EVENTS_VIEW,
+    PERMISSIONS.ADMIN_ANALYTICS_VIEW,
     PERMISSIONS.ADMIN_LOGS_VIEW,
   ],
 
   editor: [
     PERMISSIONS.ADMIN_ACCESS,
     PERMISSIONS.ADMIN_CONTENT_VIEW,
+    PERMISSIONS.ADMIN_CONTENT_PUBLISH,
+    PERMISSIONS.ADMIN_CONTENT_MEDIA_CREATE,
     PERMISSIONS.ADMIN_CONTENT_MANAGE,
+    // P2 reconciliation (TIN-2435): member self-service core floor.
+    PERMISSIONS.ADMIN_EVENTS_VIEW,
     PERMISSIONS.ADMIN_ANALYTICS_VIEW,
   ],
 
   event_manager: [
     PERMISSIONS.ADMIN_ACCESS,
+    // P2 reconciliation (TIN-2435): member self-service core floor.
+    PERMISSIONS.ADMIN_CONTENT_VIEW,
+    PERMISSIONS.ADMIN_CONTENT_PUBLISH,
     PERMISSIONS.ADMIN_EVENTS_VIEW,
     PERMISSIONS.ADMIN_EVENTS_MANAGE,
     PERMISSIONS.ADMIN_ANALYTICS_VIEW,
   ],
 
-  moderator: [
-    PERMISSIONS.ADMIN_ACCESS,
-    PERMISSIONS.ADMIN_CONTENT_VIEW,
-    PERMISSIONS.ADMIN_CONTENT_MODERATE,
-    PERMISSIONS.ADMIN_USERS_VIEW,
-    PERMISSIONS.ADMIN_ANALYTICS_VIEW,
-    PERMISSIONS.ADMIN_LOGS_VIEW,
-  ],
-
   contributor: [
     PERMISSIONS.ADMIN_ACCESS,
     PERMISSIONS.ADMIN_CONTENT_VIEW,
+    PERMISSIONS.ADMIN_CONTENT_PUBLISH,
+    PERMISSIONS.ADMIN_CONTENT_MEDIA_CREATE,
+    // P2 reconciliation (TIN-2435): member self-service core floor.
+    PERMISSIONS.ADMIN_EVENTS_VIEW,
   ],
 
   member: [
@@ -108,6 +134,80 @@ export const ROLE_PERMISSIONS: Record<AdminRole, string[]> = {
     PERMISSIONS.ADMIN_ACCESS,
     PERMISSIONS.ADMIN_ANALYTICS_VIEW,
   ],
+};
+
+// MEMBER_SELF_SERVICE_CORE is defined AS the member row, by construction
+// (TIN-2435). Every role ranked at or above `member` in ROLE_HIERARCHY
+// must hold a superset of this core (invariant P2).
+export const MEMBER_SELF_SERVICE_CORE: readonly string[] = Object.freeze([
+  ...ROLE_PERMISSIONS.member,
+]);
+
+// Feature domains are derived from the existing permission string shape
+// `admin.<domain>.<verb>` (with `admin.access` -> `access`). Do not invent
+// new domains; the eight below are the ratified set (TIN-2435).
+export const FEATURE_DOMAINS = [
+  'access',
+  'users',
+  'content',
+  'events',
+  'analytics',
+  'settings',
+  'security',
+  'logs',
+] as const;
+
+export type FeatureDomain = (typeof FEATURE_DOMAINS)[number];
+
+// P3 registry (TIN-2435): every permission string that appears in
+// ROLE_PERMISSIONS must appear here, and vice versa.
+export const PERMISSION_FEATURE_DOMAIN: Record<AdminPermission, FeatureDomain> = {
+  'admin.access': 'access',
+  'admin.users.view': 'users',
+  'admin.users.manage': 'users',
+  'admin.users.delete': 'users',
+  'admin.content.view': 'content',
+  'admin.content.publish': 'content',
+  'admin.content.media_create': 'content',
+  'admin.content.manage': 'content',
+  'admin.content.moderate': 'content',
+  'admin.content.delete': 'content',
+  'admin.events.view': 'events',
+  'admin.events.manage': 'events',
+  'admin.events.delete': 'events',
+  'admin.analytics.view': 'analytics',
+  'admin.analytics.export': 'analytics',
+  'admin.settings.view': 'settings',
+  'admin.settings.manage': 'settings',
+  'admin.security.view': 'security',
+  'admin.security.manage': 'security',
+  'admin.logs.view': 'logs',
+  'admin.logs.export': 'logs',
+};
+
+// Two-axis role charter (operator-ratified 2026-07-04, TIN-2435).
+// Axis 1 (governance spine): viewer -> member -> moderator -> admin ->
+// super_admin, totally ordered by ROLE_HIERARCHY; governs who manages whom.
+// Axis 2 (specialists): editor / event_manager / contributor hold
+// feature-scoped capability sets that do NOT nest into the spine order
+// (TIN-1606 precedent: event_manager vs contributor non-nesting is
+// ratified product policy).
+export type RoleAxis = 'governance-spine' | 'specialist';
+
+export interface RoleCharterEntry {
+  axis: RoleAxis;
+  rank: number;
+}
+
+export const ROLE_CHARTER: Record<AdminRole, RoleCharterEntry> = {
+  super_admin: { axis: 'governance-spine', rank: ROLE_HIERARCHY.super_admin },
+  admin: { axis: 'governance-spine', rank: ROLE_HIERARCHY.admin },
+  moderator: { axis: 'governance-spine', rank: ROLE_HIERARCHY.moderator },
+  editor: { axis: 'specialist', rank: ROLE_HIERARCHY.editor },
+  event_manager: { axis: 'specialist', rank: ROLE_HIERARCHY.event_manager },
+  contributor: { axis: 'specialist', rank: ROLE_HIERARCHY.contributor },
+  member: { axis: 'governance-spine', rank: ROLE_HIERARCHY.member },
+  viewer: { axis: 'governance-spine', rank: ROLE_HIERARCHY.viewer },
 };
 
 

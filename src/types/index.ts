@@ -59,6 +59,10 @@ export type {
 export {
   PERMISSIONS,
   ROLE_PERMISSIONS,
+  MEMBER_SELF_SERVICE_CORE,
+  FEATURE_DOMAINS,
+  PERMISSION_FEATURE_DOMAIN,
+  ROLE_CHARTER,
   VALIDATION_RULES,
 } from './permissions.js';
 
@@ -66,6 +70,9 @@ export {
 export type {
   AdminPermission,
   ContentVisibility,
+  FeatureDomain,
+  RoleAxis,
+  RoleCharterEntry,
 } from './permissions.js';
 
 

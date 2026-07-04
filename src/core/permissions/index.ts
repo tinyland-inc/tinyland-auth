@@ -8,7 +8,7 @@
 
 
 import { ROLE_HIERARCHY, isValidAdminRole, type AdminRole, type AdminUser } from '../../types/auth.js';
-import { PERMISSIONS, ROLE_PERMISSIONS, type ContentVisibility } from '../../types/permissions.js';
+import { PERMISSIONS, ROLE_PERMISSIONS, type AdminPermission, type ContentVisibility } from '../../types/permissions.js';
 
 
 
@@ -123,10 +123,14 @@ export function getPermissionDisplayName(permission: string): string {
     [PERMISSIONS.ADMIN_USERS_MANAGE]: 'Manage Users',
     [PERMISSIONS.ADMIN_USERS_DELETE]: 'Delete Users',
     [PERMISSIONS.ADMIN_CONTENT_VIEW]: 'View Content',
+    [PERMISSIONS.ADMIN_CONTENT_PUBLISH]: 'Publish Public Content',
+    [PERMISSIONS.ADMIN_CONTENT_MEDIA_CREATE]: 'Create Media Content',
     [PERMISSIONS.ADMIN_CONTENT_MANAGE]: 'Manage Content',
     [PERMISSIONS.ADMIN_CONTENT_MODERATE]: 'Moderate Content',
+    [PERMISSIONS.ADMIN_CONTENT_DELETE]: 'Delete Content',
     [PERMISSIONS.ADMIN_EVENTS_VIEW]: 'View Events',
     [PERMISSIONS.ADMIN_EVENTS_MANAGE]: 'Manage Events',
+    [PERMISSIONS.ADMIN_EVENTS_DELETE]: 'Delete Events',
     [PERMISSIONS.ADMIN_ANALYTICS_VIEW]: 'View Analytics',
     [PERMISSIONS.ADMIN_ANALYTICS_EXPORT]: 'Export Analytics',
     [PERMISSIONS.ADMIN_SETTINGS_VIEW]: 'View Settings',
@@ -143,99 +147,115 @@ export function getPermissionDisplayName(permission: string): string {
 
 
 
-const ALL_ROLES = ['super_admin', 'admin', 'editor', 'moderator', 'event_manager', 'contributor', 'member', 'viewer'];
-const CONTENT_CREATORS = ['super_admin', 'admin', 'editor', 'moderator', 'event_manager', 'contributor', 'member'];
-const EDITORS = ['super_admin', 'admin', 'editor'];
-const ADMINS = ['super_admin', 'admin'];
-const SUPER_ADMIN = ['super_admin'];
+// Every can* predicate below derives from ROLE_PERMISSIONS (the SSOT
+// capability lattice) instead of hand-maintained role arrays. The role
+// arrays were the tinyland.dev#628 anti-pattern: independently maintained
+// lists that drift from the hierarchy/matrix they claim to encode
+// (TIN-2429, TIN-2435).
 
 function normalizeRole(role: AdminRole | string): string {
   return String(role).toLowerCase().replace(/-/g, '_');
 }
 
-
-export function canViewPosts(role: AdminRole | string): boolean {
-  return ALL_ROLES.includes(normalizeRole(role));
+function roleHoldsPermission(role: AdminRole | string, permission: AdminPermission): boolean {
+  const normalized = normalizeRole(role);
+  if (!isValidAdminRole(normalized)) {
+    return false;
+  }
+  return ROLE_PERMISSIONS[normalized].includes(permission);
 }
 
+function roleHoldsAnyPermission(role: AdminRole | string, permissions: AdminPermission[]): boolean {
+  return permissions.some(permission => roleHoldsPermission(role, permission));
+}
+
+// Domain list views floor at admin.access: every valid role may see the
+// admin-surface list views, matching the pre-derivation ALL_ROLES behavior.
+export function canViewPosts(role: AdminRole | string): boolean {
+  return roleHoldsPermission(role, PERMISSIONS.ADMIN_ACCESS);
+}
+
+// Own-content authoring (create / edit own / delete own / member-only
+// visibility) derives from admin.content.view, the member self-service
+// core marker (TIN-2435 P2): every role at or above member self-services
+// its own content.
 export function canCreatePosts(role: AdminRole | string): boolean {
-  return CONTENT_CREATORS.includes(normalizeRole(role));
+  return roleHoldsPermission(role, PERMISSIONS.ADMIN_CONTENT_VIEW);
 }
 
 export function canEditPosts(role: AdminRole | string): boolean {
-  return EDITORS.includes(normalizeRole(role));
+  return roleHoldsPermission(role, PERMISSIONS.ADMIN_CONTENT_MANAGE);
 }
 
 export function canDeletePosts(role: AdminRole | string): boolean {
-  return ADMINS.includes(normalizeRole(role));
+  return roleHoldsPermission(role, PERMISSIONS.ADMIN_CONTENT_DELETE);
 }
 
 
 export function canViewEvents(role: AdminRole | string): boolean {
-  return ALL_ROLES.includes(normalizeRole(role));
+  return roleHoldsPermission(role, PERMISSIONS.ADMIN_ACCESS);
 }
 
+// Own-event creation derives from admin.events.view, the member
+// self-service core marker for the events domain (TIN-2435 P2).
 export function canCreateEvents(role: AdminRole | string): boolean {
-  const r = normalizeRole(role);
-  return ['super_admin', 'admin', 'event_manager', 'member'].includes(r);
+  return roleHoldsPermission(role, PERMISSIONS.ADMIN_EVENTS_VIEW);
 }
 
 export function canEditEvents(role: AdminRole | string): boolean {
-  const r = normalizeRole(role);
-  return ['super_admin', 'admin', 'event_manager'].includes(r);
+  return roleHoldsPermission(role, PERMISSIONS.ADMIN_EVENTS_MANAGE);
 }
 
 export function canDeleteEvents(role: AdminRole | string): boolean {
-  return ADMINS.includes(normalizeRole(role));
+  return roleHoldsPermission(role, PERMISSIONS.ADMIN_EVENTS_DELETE);
 }
 
 
 export function canViewProfiles(role: AdminRole | string): boolean {
-  return ALL_ROLES.includes(normalizeRole(role));
+  return roleHoldsPermission(role, PERMISSIONS.ADMIN_ACCESS);
 }
 
+// Profile administration is user management (users feature domain).
 export function canCreateProfiles(role: AdminRole | string): boolean {
-  return ADMINS.includes(normalizeRole(role));
+  return roleHoldsPermission(role, PERMISSIONS.ADMIN_USERS_MANAGE);
 }
 
 export function canEditOwnProfile(role: AdminRole | string): boolean {
-  return ALL_ROLES.includes(normalizeRole(role));
+  return roleHoldsPermission(role, PERMISSIONS.ADMIN_ACCESS);
 }
 
 export function canEditAnyProfile(role: AdminRole | string): boolean {
-  return ADMINS.includes(normalizeRole(role));
+  return roleHoldsPermission(role, PERMISSIONS.ADMIN_USERS_MANAGE);
 }
 
 export function canDeleteProfiles(role: AdminRole | string): boolean {
-  return SUPER_ADMIN.includes(normalizeRole(role));
+  return roleHoldsPermission(role, PERMISSIONS.ADMIN_USERS_DELETE);
 }
 
 
 export function canViewUsers(role: AdminRole | string): boolean {
-  const r = normalizeRole(role);
-  return ['super_admin', 'admin', 'moderator'].includes(r);
+  return roleHoldsPermission(role, PERMISSIONS.ADMIN_USERS_VIEW);
 }
 
 export function canManageUsers(role: AdminRole | string): boolean {
-  return ADMINS.includes(normalizeRole(role));
+  return roleHoldsPermission(role, PERMISSIONS.ADMIN_USERS_MANAGE);
 }
 
 
 export function canViewVideos(role: AdminRole | string): boolean {
-  return ALL_ROLES.includes(normalizeRole(role));
+  return roleHoldsPermission(role, PERMISSIONS.ADMIN_ACCESS);
 }
 
 export function canCreateVideos(role: AdminRole | string): boolean {
-  const r = normalizeRole(role);
-  return ['super_admin', 'admin', 'editor', 'contributor'].includes(r);
+  return roleHoldsPermission(role, PERMISSIONS.ADMIN_CONTENT_MEDIA_CREATE);
 }
 
 export function canEditVideos(role: AdminRole | string): boolean {
-  return EDITORS.includes(normalizeRole(role));
+  return roleHoldsPermission(role, PERMISSIONS.ADMIN_CONTENT_MANAGE);
 }
 
 export function canDeleteVideos(role: AdminRole | string): boolean {
-  return ADMINS.includes(normalizeRole(role));
+  return roleHoldsPermission(role, PERMISSIONS.ADMIN_CONTENT_DELETE);
 }
 
 
@@ -243,34 +263,38 @@ export function canDeleteVideos(role: AdminRole | string): boolean {
 
 
 export function canCreatePublicContent(role: AdminRole | string): boolean {
-  const r = normalizeRole(role);
-  return ['super_admin', 'admin', 'editor', 'moderator', 'event_manager', 'contributor'].includes(r);
+  return roleHoldsPermission(role, PERMISSIONS.ADMIN_CONTENT_PUBLISH);
 }
 
 export function canCreateMemberOnlyContent(role: AdminRole | string): boolean {
-  return CONTENT_CREATORS.includes(normalizeRole(role));
+  return roleHoldsPermission(role, PERMISSIONS.ADMIN_CONTENT_VIEW);
 }
 
 export function canFeatureProfile(role: AdminRole | string): boolean {
-  return ADMINS.includes(normalizeRole(role));
+  return roleHoldsPermission(role, PERMISSIONS.ADMIN_USERS_MANAGE);
 }
 
 export function canEditOwnContent(role: AdminRole | string): boolean {
-  return CONTENT_CREATORS.includes(normalizeRole(role));
+  return roleHoldsPermission(role, PERMISSIONS.ADMIN_CONTENT_VIEW);
 }
 
+// Intentional delta vs the pre-derivation array (TIN-2435): moderator now
+// holds own-content deletion. Own-content self-service floors at the
+// member core, and moderator ranks above member; its previous exclusion
+// was hand-array drift, not policy.
 export function canDeleteOwnContent(role: AdminRole | string): boolean {
-  const r = normalizeRole(role);
-  return ['super_admin', 'admin', 'editor', 'event_manager', 'contributor', 'member'].includes(r);
+  return roleHoldsPermission(role, PERMISSIONS.ADMIN_CONTENT_VIEW);
 }
 
 export function canEditContent(role: AdminRole | string): boolean {
-  const r = normalizeRole(role);
-  return ['super_admin', 'admin', 'editor', 'moderator'].includes(r);
+  return roleHoldsAnyPermission(role, [
+    PERMISSIONS.ADMIN_CONTENT_MANAGE,
+    PERMISSIONS.ADMIN_CONTENT_MODERATE,
+  ]);
 }
 
 export function canDeleteContent(role: AdminRole | string): boolean {
-  return ADMINS.includes(normalizeRole(role));
+  return roleHoldsPermission(role, PERMISSIONS.ADMIN_CONTENT_DELETE);
 }
 
 export function isMemberRole(role: AdminRole | string): boolean {
@@ -278,25 +302,31 @@ export function isMemberRole(role: AdminRole | string): boolean {
 }
 
 export function canViewMemberOnlyContent(role: AdminRole | string): boolean {
-  return CONTENT_CREATORS.includes(normalizeRole(role));
+  return roleHoldsPermission(role, PERMISSIONS.ADMIN_CONTENT_VIEW);
 }
 
 export function getAllowedVisibilityOptions(role: AdminRole | string): string[] {
-  const r = normalizeRole(role);
-
-  if (ADMINS.includes(r)) {
-    return ['public', 'members', 'admin', 'private'];
+  if (!canCreateMemberOnlyContent(role)) {
+    return [];
   }
 
-  if (['editor', 'moderator', 'event_manager', 'contributor'].includes(r)) {
-    return ['public', 'members', 'private'];
+  const options: string[] = [];
+
+  if (canCreatePublicContent(role)) {
+    options.push('public');
   }
 
-  if (r === 'member') {
-    return ['members', 'private'];
+  options.push('members');
+
+  // Admin-only visibility authoring tracks the content-admin tier
+  // (admin.content.delete holders): admin and super_admin today.
+  if (canDeleteContent(role)) {
+    options.push('admin');
   }
 
-  return [];
+  options.push('private');
+
+  return options;
 }
 
 
@@ -333,11 +363,17 @@ export function canViewContent(
   }
 
   if (v === 'admin') {
-    return ['admin', 'editor', 'moderator', 'event_manager'].includes(r);
+    // Admin-visibility content is readable by domain managers: any role
+    // holding a manage/moderate capability (super_admin returned above).
+    return roleHoldsAnyPermission(r, [
+      PERMISSIONS.ADMIN_CONTENT_MANAGE,
+      PERMISSIONS.ADMIN_CONTENT_MODERATE,
+      PERMISSIONS.ADMIN_EVENTS_MANAGE,
+    ]);
   }
 
   if (v === 'members') {
-    return ['admin', 'editor', 'moderator', 'event_manager', 'contributor', 'member'].includes(r);
+    return roleHoldsPermission(r, PERMISSIONS.ADMIN_CONTENT_VIEW);
   }
 
   return false;

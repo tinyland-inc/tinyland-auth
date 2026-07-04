@@ -46,6 +46,10 @@ export {
   createAuthConfig,
   PERMISSIONS,
   ROLE_PERMISSIONS,
+  MEMBER_SELF_SERVICE_CORE,
+  FEATURE_DOMAINS,
+  PERMISSION_FEATURE_DOMAIN,
+  ROLE_CHARTER,
   VALIDATION_RULES,
 } from './types/index.js';
 
@@ -76,6 +80,9 @@ export type {
   SecurityConfig,
   AdminPermission,
   ContentVisibility,
+  FeatureDomain,
+  RoleAxis,
+  RoleCharterEntry,
   
   BootstrapRequest,
   BootstrapResponse,
