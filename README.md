@@ -54,6 +54,27 @@ See the
 and the
 [executable example](https://github.com/tinyland-inc/tinyland-auth/blob/main/examples/tinyland-databaseless-auth-mvp.ts).
 
+### Browser-as-a-factor (fingerprint doctrine)
+
+> Browser-as-a-factor (operator-canonized 2026-07-05): the Tempo-derived
+> browser fingerprint (tinyland-fingerprint — UA-parse + Tempo evidence, NOT
+> the fingerprintjs library) is not a traditional factor but correctly
+> represents the user by print as a viable element of
+> user-proof-during-session, enabling cookieless / localStorage-less
+> persistent sessions with browser-backed persistence — the novel tempo +
+> print + factors stack iterated for over a year. Boundary invariant
+> (TIN-1610, ratified): the print is evidence at the credential boundary,
+> never a veto — validateSession() never destroys an authenticated session on
+> a missing/changed fingerprint. The two truths are LAYERED, not
+> contradictory: evidence-only at the credential boundary; a
+> session-persistence factor at the product layer. Do not flatten either half
+> away.
+
+Cross-references: TIN-1610 (evidence-not-veto boundary invariant),
+[`@tummycrypt/tinyland-fingerprint` v0.3.0](https://github.com/tinyland-inc/tinyland-fingerprint)
+(supplier of the print + Tempo evidence), and prompts-enqueue
+golden-objectives §tinyland-auth (corrected 2026-07-05).
+
 ## RBAC
 
 Role management order and permission checks are intentionally separate. See
