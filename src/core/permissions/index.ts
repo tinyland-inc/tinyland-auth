@@ -139,6 +139,8 @@ export function getPermissionDisplayName(permission: string): string {
     [PERMISSIONS.ADMIN_SECURITY_MANAGE]: 'Manage Security',
     [PERMISSIONS.ADMIN_LOGS_VIEW]: 'View Logs',
     [PERMISSIONS.ADMIN_LOGS_EXPORT]: 'Export Logs',
+    [PERMISSIONS.ADMIN_FEDERATION_VIEW]: 'View Federation',
+    [PERMISSIONS.ADMIN_FEDERATION_DELIVER]: 'Deliver Federation',
   };
   return displayNames[permission] || permission;
 }
@@ -303,6 +305,13 @@ export function isMemberRole(role: AdminRole | string): boolean {
 
 export function canViewMemberOnlyContent(role: AdminRole | string): boolean {
   return roleHoldsPermission(role, PERMISSIONS.ADMIN_CONTENT_VIEW);
+}
+
+// Federation delivery (TIN-2637/TIN-2638, ratified 2026-07-07): derives
+// from ROLE_PERMISSIONS via the SSOT helper like every other predicate —
+// never a hardcoded role array (the tinyland.dev#628 anti-pattern class).
+export function canDeliverFederation(role: AdminRole | string): boolean {
+  return roleHoldsPermission(role, PERMISSIONS.ADMIN_FEDERATION_DELIVER);
 }
 
 export function getAllowedVisibilityOptions(role: AdminRole | string): string[] {

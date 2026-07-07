@@ -27,7 +27,9 @@ export type AdminPermission =
   | 'admin.security.view'
   | 'admin.security.manage'
   | 'admin.logs.view'
-  | 'admin.logs.export';
+  | 'admin.logs.export'
+  | 'admin.federation.view'
+  | 'admin.federation.deliver';
 
 
 
@@ -54,6 +56,8 @@ export const PERMISSIONS = {
   ADMIN_SECURITY_MANAGE: 'admin.security.manage',
   ADMIN_LOGS_VIEW: 'admin.logs.view',
   ADMIN_LOGS_EXPORT: 'admin.logs.export',
+  ADMIN_FEDERATION_VIEW: 'admin.federation.view',
+  ADMIN_FEDERATION_DELIVER: 'admin.federation.deliver',
 } as const;
 
 // ROLE_PERMISSIONS is the single source of truth for role capabilities.
@@ -80,6 +84,10 @@ export const ROLE_PERMISSIONS: Record<AdminRole, string[]> = {
     PERMISSIONS.ADMIN_ANALYTICS_VIEW,
     PERMISSIONS.ADMIN_SETTINGS_VIEW,
     PERMISSIONS.ADMIN_LOGS_VIEW,
+    // R1 (TIN-2637, ratified 2026-07-07): federation delivery is a
+    // governance-spine capability; admin holds what moderator holds here.
+    PERMISSIONS.ADMIN_FEDERATION_VIEW,
+    PERMISSIONS.ADMIN_FEDERATION_DELIVER,
   ],
 
   moderator: [
@@ -92,6 +100,11 @@ export const ROLE_PERMISSIONS: Record<AdminRole, string[]> = {
     PERMISSIONS.ADMIN_EVENTS_VIEW,
     PERMISSIONS.ADMIN_ANALYTICS_VIEW,
     PERMISSIONS.ADMIN_LOGS_VIEW,
+    // R1 (TIN-2637, ratified 2026-07-07): moderator is the fedi/community
+    // moderation role; it anchors federation delivery on the governance
+    // spine (admin and super_admin hold it above).
+    PERMISSIONS.ADMIN_FEDERATION_VIEW,
+    PERMISSIONS.ADMIN_FEDERATION_DELIVER,
   ],
 
   editor: [
@@ -145,7 +158,10 @@ export const MEMBER_SELF_SERVICE_CORE: readonly string[] = Object.freeze([
 
 // Feature domains are derived from the existing permission string shape
 // `admin.<domain>.<verb>` (with `admin.access` -> `access`). Do not invent
-// new domains; the eight below are the ratified set (TIN-2435).
+// new domains; the nine below are the ratified set. The original eight were
+// ratified under TIN-2435; `federation` is the ninth domain, deliberately
+// amended into the charter by the R2 ratification (TIN-2638, operator-
+// ratified 2026-07-07, bundled with the 0.5.0 cut).
 export const FEATURE_DOMAINS = [
   'access',
   'users',
@@ -155,6 +171,7 @@ export const FEATURE_DOMAINS = [
   'settings',
   'security',
   'logs',
+  'federation',
 ] as const;
 
 export type FeatureDomain = (typeof FEATURE_DOMAINS)[number];
@@ -183,6 +200,8 @@ export const PERMISSION_FEATURE_DOMAIN: Record<AdminPermission, FeatureDomain> =
   'admin.security.manage': 'security',
   'admin.logs.view': 'logs',
   'admin.logs.export': 'logs',
+  'admin.federation.view': 'federation',
+  'admin.federation.deliver': 'federation',
 };
 
 // Two-axis role charter (operator-ratified 2026-07-04, TIN-2435).
