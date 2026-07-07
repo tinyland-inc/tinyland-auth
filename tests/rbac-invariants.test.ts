@@ -3,8 +3,13 @@
 // the full role x predicate derivation matrix.
 //
 // These tests are deliberately DETERMINISTIC and EXHAUSTIVE (no random
-// property sampling): the whole role/permission space is 8 roles x 21
+// property sampling): the whole role/permission space is 8 roles x 23
 // permission strings, so we enumerate it.
+//
+// 0.5.0 (TIN-2637/TIN-2638, operator-ratified 2026-07-07): the ninth
+// feature domain `federation` with `admin.federation.view` and
+// `admin.federation.deliver`, anchored at moderator on the governance
+// spine (moderator, admin, super_admin hold it; no specialist does).
 
 import { describe, it, expect } from 'vitest';
 import {
@@ -50,6 +55,7 @@ import {
   canDeleteContent,
   isMemberRole,
   canViewMemberOnlyContent,
+  canDeliverFederation,
   getAllowedVisibilityOptions,
   canViewContent,
 } from '../src/core/permissions/index.js';
@@ -168,6 +174,59 @@ describe('P3: feature-domain registry covers the permission vocabulary exactly',
       role => ROLE_CHARTER[role].axis === 'specialist',
     ).sort();
     expect(specialists).toEqual(['contributor', 'editor', 'event_manager']);
+  });
+});
+
+describe('federation domain (0.5.0, TIN-2637/TIN-2638): exact holder sets', () => {
+  const FEDERATION_HOLDERS: readonly AdminRole[] = ['super_admin', 'admin', 'moderator'];
+
+  it('the ratified domain set is exactly the TIN-2435 eight plus federation (TIN-2638)', () => {
+    expect([...FEATURE_DOMAINS]).toEqual([
+      'access',
+      'users',
+      'content',
+      'events',
+      'analytics',
+      'settings',
+      'security',
+      'logs',
+      'federation',
+    ]);
+  });
+
+  it('both federation permissions map to the federation domain', () => {
+    expect(PERMISSION_FEATURE_DOMAIN['admin.federation.view']).toBe('federation');
+    expect(PERMISSION_FEATURE_DOMAIN['admin.federation.deliver']).toBe('federation');
+  });
+
+  it('exactly {moderator, admin, super_admin} hold admin.federation.deliver (exhaustive over all 8 roles)', () => {
+    for (const role of ADMIN_ROLES) {
+      expect(
+        permissionSet(role).has(PERMISSIONS.ADMIN_FEDERATION_DELIVER),
+        `${role} holds admin.federation.deliver`,
+      ).toBe(FEDERATION_HOLDERS.includes(role));
+    }
+  });
+
+  it('exactly {moderator, admin, super_admin} hold admin.federation.view (exhaustive over all 8 roles)', () => {
+    for (const role of ADMIN_ROLES) {
+      expect(
+        permissionSet(role).has(PERMISSIONS.ADMIN_FEDERATION_VIEW),
+        `${role} holds admin.federation.view`,
+      ).toBe(FEDERATION_HOLDERS.includes(role));
+    }
+  });
+
+  it('R1 spine propagation: every governance-spine role ranked at or above moderator holds deliver, and no specialist does', () => {
+    for (const role of ADMIN_ROLES) {
+      const onSpineAtOrAboveModerator =
+        ROLE_CHARTER[role].axis === 'governance-spine' &&
+        ROLE_HIERARCHY[role] >= ROLE_HIERARCHY.moderator;
+      expect(
+        permissionSet(role).has(PERMISSIONS.ADMIN_FEDERATION_DELIVER),
+        `${role}: deliver iff governance-spine rank >= moderator`,
+      ).toBe(onSpineAtOrAboveModerator);
+    }
   });
 });
 
@@ -365,6 +424,10 @@ describe('role x predicate derivation matrix (behavior lock)', () => {
     canViewMemberOnlyContent: [canViewMemberOnlyContent, {
       super_admin: true, admin: true, moderator: true, editor: true,
       event_manager: true, contributor: true, member: true, viewer: false,
+    }],
+    canDeliverFederation: [canDeliverFederation, {
+      super_admin: true, admin: true, moderator: true, editor: false,
+      event_manager: false, contributor: false, member: false, viewer: false,
     }],
   };
 

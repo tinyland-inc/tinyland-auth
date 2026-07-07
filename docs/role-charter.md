@@ -61,7 +61,30 @@ in `tests/rbac-invariants.test.ts`:
   versa. Domains are derived from the string shape `admin.<domain>.<verb>`
   (`admin.access` → `access`); the ratified domain set is `access`,
   `users`, `content`, `events`, `analytics`, `settings`, `security`,
-  `logs`. Do not invent domains.
+  `logs`, `federation`. Do not invent domains — `federation` (the ninth)
+  was a deliberate charter amendment, operator-ratified 2026-07-07
+  (R2, TIN-2638, bundled with the 0.5.0 cut); any further domain requires
+  the same ratification path.
+
+## Federation domain (0.5.0 — R1/R2, TIN-2637 / TIN-2638)
+
+Operator-ratified 2026-07-07:
+
+- **R2 (TIN-2638)** amends the charter with `federation` as the ninth
+  feature domain, carrying `admin.federation.view` (read side) and
+  `admin.federation.deliver` (outbound delivery authority).
+- **R1 (TIN-2637)** grants `admin.federation.deliver` (and `.view`) to
+  `moderator`; `admin` and `super_admin` inherit/hold it per the grant.
+  Delivery is a **governance-spine capability** anchored at `moderator` —
+  the fedi/community moderation role — and held by every spine role ranked
+  at or above it. No specialist (`editor`, `event_manager`, `contributor`)
+  and no role below `moderator` (`member`, `viewer`) holds it: the lattice
+  is explicit-array (grants do not flow up by rank), so `admin` holds the
+  grant explicitly and `super_admin` holds it via the full-vocabulary row.
+- Predicate: `canDeliverFederation(role)` derives from `ROLE_PERMISSIONS`
+  via the SSOT helper, like every other `can*` predicate.
+- Semantics are intentionally limited to `view`/`deliver`; consumer wiring
+  (e.g. pulse delivery workers) is a separate lane (C4).
 
 ## Role × feature charter (ratified)
 
@@ -70,8 +93,8 @@ Operator-ratified 2026-07-04, TIN-2435:
 | Role | Axis | Charter |
 | --- | --- | --- |
 | `super_admin` | governance-spine | System owner; holds every permission; sole holder of destructive/exporting grants (`users.delete`, `analytics.export`, `settings.manage`, `security.*`, `logs.export`). |
-| `admin` | governance-spine | General administration across domains: user management, content/events lifecycle including deletion, settings and logs view. |
-| `moderator` | governance-spine | **Fedi / community moderation**: `content.moderate`, `users.view`, `logs.view`, plus public publishing and the member core. |
+| `admin` | governance-spine | General administration across domains: user management, content/events lifecycle including deletion, settings and logs view, federation view/deliver (0.5.0, TIN-2637). |
+| `moderator` | governance-spine | **Fedi / community moderation**: `content.moderate`, `users.view`, `logs.view`, `federation.view`/`federation.deliver` (0.5.0, TIN-2637), plus public publishing and the member core. |
 | `editor` | specialist | **Blog editorial**: `content.manage`, `content.publish`, `content.media_create`, analytics view, plus the member core. |
 | `event_manager` | specialist | **Events / calendaring**: `events.manage`, public publishing, analytics view, plus the member core. |
 | `contributor` | specialist | **Drafts / submissions**: authors content including media (`content.media_create`) and public-visibility posts (`content.publish`), plus the member core. No manage/moderate/delete grants. |

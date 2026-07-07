@@ -46,6 +46,15 @@ guarantees a floor: every role ranked at or above `member` holds
 [role-charter.md](./role-charter.md) for the full two-axis charter and the
 P1/P2/P3 invariants.
 
+Since 0.5.0 (operator-ratified 2026-07-07, R1/R2 = TIN-2637/TIN-2638) the
+vocabulary includes the `federation` feature domain — the ninth, and the
+first domain amended into the charter after TIN-2435 closed the set:
+
+- `admin.federation.view` and `admin.federation.deliver` are held by
+  exactly `moderator`, `admin`, and `super_admin` (the governance spine at
+  or above `moderator`). No specialist role holds them.
+- `canDeliverFederation(role)` is the derived predicate.
+
 Examples:
 
 - `event_manager` has `admin.events.manage`.
@@ -54,6 +63,8 @@ Examples:
 - `contributor` has `admin.content.view`.
 - `contributor` does not get event-management permission.
 - `admin` outranks `moderator` but does not get `admin.content.moderate`.
+- `moderator`, `admin`, and `super_admin` have `admin.federation.deliver`;
+  `editor`, `event_manager`, `contributor`, `member`, and `viewer` do not.
 - `super_admin` is the exception: `hasPermission()` grants it every permission.
 
 ## Downstream Test Guidance

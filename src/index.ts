@@ -178,6 +178,7 @@ export {
   canDeleteContent,
   isMemberRole,
   canViewMemberOnlyContent,
+  canDeliverFederation,
   getAllowedVisibilityOptions,
 
   

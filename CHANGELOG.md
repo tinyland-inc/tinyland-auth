@@ -1,5 +1,41 @@
 # @tummycrypt/tinyland-auth
 
+## 0.5.0
+
+### Minor Changes
+
+- Federation lattice (C3; R1/R2 = TIN-2637/TIN-2638, operator-ratified
+  2026-07-07). A deliberate charter amendment: TIN-2435 closed the feature
+  domain set at eight; R2 ratifies `federation` as the ninth domain,
+  bundled with this cut.
+
+  **New feature domain**: `federation` added to `FEATURE_DOMAINS` (the
+  ratified set is now nine domains).
+
+  **New permission strings** (both mapped to the `federation` domain in
+  `PERMISSION_FEATURE_DOMAIN`):
+
+  - `admin.federation.view` → moderator, admin, super_admin
+  - `admin.federation.deliver` → moderator, admin, super_admin (R1:
+    granted to moderator; admin and super_admin inherit/hold — the lattice
+    is explicit-array, so admin holds the grant explicitly and super_admin
+    holds it via the full-vocabulary row)
+
+  Delivery is a governance-spine capability anchored at `moderator` (the
+  fedi/community moderation role). No specialist role (`editor`,
+  `event_manager`, `contributor`) and no role below `moderator` holds it.
+
+  **New export**: `canDeliverFederation(role)`, derived from
+  `ROLE_PERMISSIONS` via the SSOT helper like every other `can*` predicate.
+
+  **Invariants**: P1 (management order) and P2 (member self-service floor)
+  unchanged; P3 registry closure extended over the two new strings. The
+  rbac-invariants suite exhaustively locks the federation holder set to
+  exactly {moderator, admin, super_admin}.
+
+  Consumer wiring (pulse delivery workers etc.) is out of scope for this
+  package (C4, separate lane).
+
 ## 0.4.0
 
 ### Minor Changes
