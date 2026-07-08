@@ -17,6 +17,8 @@ import {
   generateAuthenticatorSecret,
   generateAuthenticatorUri,
   verifyAuthenticatorToken,
+  getAuthenticatorCheckDelta,
+  getAuthenticatorStep,
 } from "../../totp/otplib-compat.js";
 
 configureAuthenticator({ window: 1 });
@@ -122,6 +124,77 @@ export class TOTPService {
 
       return await verifyAuthenticatorToken(secretOrNull.secret, cleanToken);
     }, 150);
+  }
+
+  /**
+   * The absolute TOTP time-step for the current wall-clock time. A token minted
+   * for time-step N is `Math.floor(now / period)`; comparing consumed steps
+   * across verifications gives us a monotonic single-use marker.
+   */
+  private currentStep(): number {
+    const stepSeconds = getAuthenticatorStep();
+    return Math.floor(Date.now() / 1000 / stepSeconds);
+  }
+
+  /**
+   * Replay-resistant token verification.
+   *
+   * Unlike {@link verifyToken}, this enforces single-use of a code across the
+   * accepted `+/-window` skew: it derives the absolute time-step the supplied
+   * code was minted for and rejects any step that is `<=` the caller-supplied
+   * `lastUsedStep` (the previously-consumed step for this user). On success it
+   * returns the consumed step so the caller can persist it and reject replays
+   * of the same code — even while that code is still inside its validity window.
+   *
+   * @param secretOrNull the user's TOTP secret (or `null` for constant-time
+   *   handling of unknown users)
+   * @param token the submitted code
+   * @param lastUsedStep the last time-step this user successfully consumed, if
+   *   any; omit for the first verification
+   * @returns `{ valid, step }` — `valid` is false for bad codes AND for replays;
+   *   `step` (present only when valid) is the newly-consumed step to persist
+   */
+  async verifyTokenWithStep(
+    secretOrNull: TOTPSecret | null,
+    token: string,
+    lastUsedStep?: number,
+  ): Promise<{ valid: boolean; step?: number }> {
+    const cleanToken = token.replace(/\s/g, "");
+
+    if (this.devMode && this.testCode && cleanToken === this.testCode) {
+      const step = this.currentStep();
+      if (lastUsedStep !== undefined && step <= lastUsedStep) {
+        return { valid: false };
+      }
+      return { valid: true, step };
+    }
+
+    let matchedStep: number | undefined;
+
+    const valid = await timingSafeVerify(async () => {
+      if (!secretOrNull) {
+        // Constant-time dummy path for unknown users.
+        getAuthenticatorCheckDelta("JBSWY3DPEHPK3PXP", cleanToken);
+        return false;
+      }
+
+      const delta = getAuthenticatorCheckDelta(secretOrNull.secret, cleanToken);
+      if (delta === null) {
+        return false;
+      }
+
+      const step = this.currentStep() + delta;
+      if (lastUsedStep !== undefined && step <= lastUsedStep) {
+        // Code is cryptographically valid but was already consumed (or is
+        // older than the last consumed step): reject as a replay.
+        return false;
+      }
+
+      matchedStep = step;
+      return true;
+    }, 150);
+
+    return valid ? { valid: true, step: matchedStep } : { valid: false };
   }
 
   generateToken(secret: TOTPSecret): string {

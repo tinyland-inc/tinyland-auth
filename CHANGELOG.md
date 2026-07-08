@@ -1,5 +1,18 @@
 # @tummycrypt/tinyland-auth
 
+## Unreleased
+
+### Patch Changes
+
+- TOTP replay protection. `TOTPService.verifyTokenWithStep()` is a new,
+  replay-resistant verification surface: it derives the absolute time-step a
+  submitted code was minted for and rejects any step `<=` a caller-supplied
+  `lastUsedStep`, so a valid code can no longer be reused inside its
+  `+/-window` validity window (~90s at window=1). It returns the consumed step
+  for callers to persist. `EncryptedTOTPSecret` gains an optional
+  `lastUsedTotpStep` field to hold that marker. The legacy `verifyToken()`
+  boolean surface is unchanged (stateless, opt-in migration).
+
 ## 0.5.0
 
 ### Minor Changes

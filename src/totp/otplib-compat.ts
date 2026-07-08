@@ -11,6 +11,8 @@ type LegacyAuthenticator = {
   keyuri: (accountName: string, issuer: string, secret: string) => string;
   generate: (secret: string) => string;
   verify: (options: { token: string; secret: string }) => boolean;
+  check?: (token: string, secret: string) => boolean;
+  checkDelta?: (token: string, secret: string) => number | null;
 };
 
 type ModernVerifyResult = boolean | { valid: boolean };
@@ -169,4 +171,33 @@ export async function verifyAuthenticatorToken(
 
 export function getAuthenticatorStep(): number {
   return getLegacyAuthenticator()?.options?.step ?? 30;
+}
+
+/**
+ * Returns how many time-steps away from the current step the token matched,
+ * within the configured verification window (e.g. -1, 0, +1 for window=1), or
+ * `null` when the token is invalid. This is the primitive that lets callers
+ * derive the absolute time-step a code was minted for and enforce single-use
+ * (replay) protection: absoluteStep = currentStep + delta.
+ */
+export function getAuthenticatorCheckDelta(
+  secret: string,
+  token: string,
+): number | null {
+  const authenticator = getLegacyAuthenticator();
+
+  if (authenticator && typeof authenticator.checkDelta === "function") {
+    const delta = authenticator.checkDelta(token, secret);
+    return typeof delta === "number" ? delta : null;
+  }
+
+  // Fallback for otplib builds that only expose a boolean check/verify: we
+  // cannot recover the exact delta, so treat a valid token as the current
+  // step (delta 0). Replay protection then degrades to same-step rejection,
+  // which is still strictly better than no protection.
+  if (authenticator && typeof authenticator.verify === "function") {
+    return authenticator.verify({ token, secret }) ? 0 : null;
+  }
+
+  throw new Error("otplib checkDelta/verify export is unavailable");
 }
