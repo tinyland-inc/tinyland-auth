@@ -204,6 +204,88 @@ describe('TOTPService', () => {
     });
   });
 
+  describe('verifyTokenWithStep (replay protection)', () => {
+    it('accepts a fresh code and returns the consumed step', async () => {
+      const service = createTestService();
+      const secret = await service.generateSecret('testuser', 'test@example.com');
+      const token = service.generateToken(secret);
+
+      const result = await service.verifyTokenWithStep(secret, token);
+
+      expect(result.valid).toBe(true);
+      expect(typeof result.step).toBe('number');
+    });
+
+    it('REGRESSION: rejects the same code on second use (replay) when the prior step is fed back', async () => {
+      const service = createTestService();
+      const secret = await service.generateSecret('testuser', 'test@example.com');
+      const token = service.generateToken(secret);
+
+      // First use: valid, yields the consumed step.
+      const first = await service.verifyTokenWithStep(secret, token);
+      expect(first.valid).toBe(true);
+      const consumedStep = first.step!;
+
+      // Second use of the SAME code, now that the step is marked consumed:
+      // must be rejected even though the code is still inside its window.
+      const second = await service.verifyTokenWithStep(secret, token, consumedStep);
+      expect(second.valid).toBe(false);
+      expect(second.step).toBeUndefined();
+    });
+
+    it('rejects any code whose step is <= the last consumed step (monotonic)', async () => {
+      const service = createTestService();
+      const secret = await service.generateSecret('testuser', 'test@example.com');
+      const token = service.generateToken(secret);
+
+      const { step } = await service.verifyTokenWithStep(secret, token);
+
+      // A future last-used marker (step ahead of the current code) rejects it.
+      const stale = await service.verifyTokenWithStep(secret, token, step! + 5);
+      expect(stale.valid).toBe(false);
+    });
+
+    it('still accepts a code when the last consumed step is older', async () => {
+      const service = createTestService();
+      const secret = await service.generateSecret('testuser', 'test@example.com');
+      const token = service.generateToken(secret);
+
+      const { step } = await service.verifyTokenWithStep(secret, token);
+      // A strictly-older last-used step must not block a newer code.
+      const result = await service.verifyTokenWithStep(secret, token, step! - 1);
+      expect(result.valid).toBe(true);
+      expect(result.step).toBe(step);
+    });
+
+    it('rejects an invalid code and returns no step', async () => {
+      const service = createTestService();
+      const secret = await service.generateSecret('testuser', 'test@example.com');
+
+      const result = await service.verifyTokenWithStep(secret, '000000', undefined);
+      expect(result.valid).toBe(false);
+      expect(result.step).toBeUndefined();
+    });
+
+    it('handles a null secret gracefully (returns invalid, no step)', async () => {
+      const service = createTestService();
+
+      const result = await service.verifyTokenWithStep(null, '123456');
+      expect(result.valid).toBe(false);
+      expect(result.step).toBeUndefined();
+    });
+
+    it('keeps legacy verifyToken behavior unchanged (no replay state)', async () => {
+      const service = createTestService();
+      const secret = await service.generateSecret('testuser', 'test@example.com');
+      const token = service.generateToken(secret);
+
+      // The stateless helper still accepts a valid code repeatedly — replay
+      // protection is opt-in via verifyTokenWithStep.
+      expect(await service.verifyToken(secret, token)).toBe(true);
+      expect(await service.verifyToken(secret, token)).toBe(true);
+    });
+  });
+
   describe('generateToken', () => {
     it('should generate a 6-digit numeric token', async () => {
       const service = createTestService();

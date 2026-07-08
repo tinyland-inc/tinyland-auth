@@ -196,6 +196,14 @@ export interface EncryptedTOTPSecret {
   salt: string;
   createdAt: string;
   lastUsedAt?: string;
+  /**
+   * The last TOTP time-step successfully consumed by this user. Persisted by
+   * verify handlers and fed back into
+   * {@link TOTPService.verifyTokenWithStep} to reject replays of a code that is
+   * still inside its validity window. Absent until the first replay-aware
+   * verification.
+   */
+  lastUsedTotpStep?: number;
   backupCodesGenerated: boolean;
   version: number;
 }
