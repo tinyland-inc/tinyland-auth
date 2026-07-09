@@ -1,8 +1,8 @@
 # @tummycrypt/tinyland-auth
 
-## Unreleased
+## 0.6.0
 
-### Patch Changes
+### Minor Changes
 
 - TOTP replay protection. `TOTPService.verifyTokenWithStep()` is a new,
   replay-resistant verification surface: it derives the absolute time-step a
