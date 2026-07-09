@@ -328,8 +328,8 @@ import { fail, redirect } from '@sveltejs/kit';
 import { verifyPassword } from '@tummycrypt/tinyland-auth';
 import type { TOTPSecret } from '@tummycrypt/tinyland-auth/types';
 import { setSessionCookie } from '@tummycrypt/tinyland-auth/sveltekit';
-import { storage } from '$lib/server/auth.js';
 import { sessions, totp, authConfig } from '$lib/server/auth.js';
+import { storage } from '$lib/server/storage.js';
 
 export const actions = {
   default: async ({ request, cookies, getClientAddress }) => {
@@ -456,7 +456,8 @@ import {
   generateTOTPUri,
   generateTOTPQRCode,
 } from '@tummycrypt/tinyland-auth/totp';
-import { storage, totp } from '$lib/server/auth.js';
+import { totp } from '$lib/server/auth.js';
+import { storage } from '$lib/server/storage.js';
 
 const bootstrap = createBootstrapService({
   storage,                       // needs hasUsers/createUser/saveTOTPSecret/getTOTPSecret/saveBackupCodes/logAuditEvent
@@ -469,7 +470,7 @@ const bootstrap = createBootstrapService({
   encryptTOTPSecret: async (handle, secret) => {
     const enc = totp.encrypt(secret);
     return {
-      userId: 'pending',         // overwritten once the user row exists
+      userId: 'pending',         // placeholder; record is keyed by handle (complete() does not backfill this)
       handle,
       encryptedSecret: enc.encrypted,
       iv: enc.iv,
@@ -496,11 +497,18 @@ const bootstrap = createBootstrapService({
 
 Flow: `getStatus()` tells you whether bootstrap is still allowed
 (`needsBootstrap`); `initiate({ handle, password, displayName, email? })` returns
-`{ state, qrCodeUrl, backupCodes }` (carry `state` across the request, for
-example in a signed cookie); `complete(state, { handle, totpCode })` verifies the
+`{ state, qrCodeUrl, backupCodes }` (you carry `state` from `initiate` into
+`complete` yourself); `complete(state, { handle, totpCode })` verifies the
 code, writes the `super_admin`, stores backup codes, logs a
 `BOOTSTRAP_COMPLETED` audit event, and returns the safe user. The state expires
 10 minutes after `initiate`.
+
+Protect `state` in transit. `BootstrapState` is a plain object that holds a raw
+(unencrypted) TOTP secret, the bcrypt password hash, and the plaintext backup
+codes. The package does not sign, encrypt, or serialize it for you. Do not
+round-trip it through the browser unprotected: keep it server-side, or if you
+must hand it to the client between `initiate` and `complete`, wrap it in a
+signed, httpOnly cookie (or equivalent) whose integrity you enforce yourself.
 
 The seed script in section 6 is the lower-friction path for most apps; reach for
 `BootstrapService` when you want the whole thing to happen inside the running app
