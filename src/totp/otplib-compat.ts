@@ -1,65 +1,80 @@
-import * as otplibModule from "otplib";
+import {
+  generateSecret,
+  generateSync,
+  generateURI,
+  verify,
+  verifySync,
+} from "otplib";
 
-type LegacyAuthenticator = {
-  options?: {
-    step?: number;
-    window?: number;
-    digits?: number;
-    [key: string]: unknown;
-  };
-  generateSecret: () => string;
-  keyuri: (accountName: string, issuer: string, secret: string) => string;
-  generate: (secret: string) => string;
-  verify: (options: { token: string; secret: string }) => boolean;
-  check?: (token: string, secret: string) => boolean;
-  checkDelta?: (token: string, secret: string) => number | null;
+/**
+ * otplib v13 compatibility shim.
+ *
+ * otplib v13 dropped the stateful `authenticator` singleton (with its
+ * `checkDelta`/`verify`/`keyuri` methods) in favour of stateless functional
+ * exports backed by `@otplib/core` / `@otplib/totp`. This module reimplements
+ * the small surface the rest of the codebase depends on — a configurable step /
+ * verification window, token generation, URI generation, boolean verification,
+ * and (critically) the `checkDelta` primitive that the replay-guard relies on —
+ * on top of those functional exports.
+ *
+ * Security floor: v13 enforces a 128-bit (16-byte) minimum secret length via
+ * `SecretTooShortError`. We do NOT weaken that floor. Freshly generated secrets
+ * are 160-bit (20 bytes). For already-issued sub-floor secrets we surface a
+ * clear, actionable migration error instead of otplib's low-level message and
+ * instead of silently padding (which would change the effective secret).
+ */
+
+/**
+ * Minimum TOTP secret length in bytes (128 bits, RFC 4226 floor). This mirrors
+ * `@otplib/core`'s `MIN_SECRET_BYTES` and must never be lowered.
+ */
+export const MIN_SECRET_BYTES = 16;
+
+type AuthenticatorConfig = {
+  step: number;
+  window: number;
+  digits: number;
 };
 
-type ModernVerifyResult = boolean | { valid: boolean };
-
-type ModernOtplib = {
-  authenticator?: LegacyAuthenticator;
-  default?: ModernOtplib & {
-    authenticator?: LegacyAuthenticator;
-  };
-  generateSecret?: (options?: { length?: number }) => string;
-  generateURI?: (options: {
-    strategy?: "totp";
-    issuer: string;
-    label: string;
-    secret: string;
-    digits?: number;
-    period?: number;
-  }) => string;
-  generateSync?: (options: { secret: string; strategy?: "totp" }) => string;
-  verify?: (options: {
-    secret: string;
-    token: string;
-    strategy?: "totp";
-    epochTolerance?: number;
-  }) => Promise<ModernVerifyResult> | ModernVerifyResult;
-  verifySync?: (options: {
-    secret: string;
-    token: string;
-    strategy?: "totp";
-    epochTolerance?: number;
-  }) => ModernVerifyResult;
+// Module-level configuration replacing v12's mutable `authenticator.options`.
+const config: AuthenticatorConfig = {
+  step: 30,
+  window: 1,
+  digits: 6,
 };
 
-const otplib = otplibModule as unknown as ModernOtplib;
-
-function getDefaultModule(): ModernOtplib | undefined {
-  return otplib.default;
+/**
+ * Number of decoded secret bytes represented by a Base32 string. Padding and
+ * whitespace are ignored; this is a floor estimate (5 bits per Base32 char).
+ */
+function base32ByteLength(secret: string): number {
+  const clean = secret.replace(/=+$/g, "").replace(/\s/g, "");
+  return Math.floor((clean.length * 5) / 8);
 }
 
-function getLegacyAuthenticator(): LegacyAuthenticator | undefined {
-  return otplib.authenticator ?? getDefaultModule()?.authenticator;
+/**
+ * Enforce the 128-bit security floor with a clear, actionable error. Called on
+ * the crypto paths (generate/verify/checkDelta) so a legacy sub-floor secret
+ * fails closed and visibly rather than throwing otplib's internal error or —
+ * worse — being silently padded.
+ */
+function assertSecretMeetsFloor(secret: string): void {
+  if (base32ByteLength(secret) < MIN_SECRET_BYTES) {
+    throw new Error(
+      `TOTP secret is below the ${MIN_SECRET_BYTES}-byte (128-bit) security ` +
+        `floor and can no longer be used; re-enroll this credential with a ` +
+        `freshly generated secret.`,
+    );
+  }
 }
 
-function getExport<K extends keyof ModernOtplib>(
-  key: K,
-): ModernOtplib[K] | undefined {
-  return otplib[key] ?? getDefaultModule()?.[key];
+/**
+ * Symmetric verification tolerance in seconds derived from the configured
+ * step/window (window=1 step=30 -> +/-30s -> +/-1 time-step), matching the v12
+ * `window` semantics the callers configured.
+ */
+function epochTolerance(): number {
+  return config.window * config.step;
 }
 
 export function configureAuthenticator(options: {
@@ -67,26 +82,13 @@ export function configureAuthenticator(options: {
   window?: number;
   digits?: number;
 }): void {
-  const authenticator = getLegacyAuthenticator();
-  if (!authenticator) return;
-
-  authenticator.options = {
-    ...authenticator.options,
-    ...options,
-  };
+  if (options.step !== undefined) config.step = options.step;
+  if (options.window !== undefined) config.window = options.window;
+  if (options.digits !== undefined) config.digits = options.digits;
 }
 
 export function generateAuthenticatorSecret(): string {
-  const authenticator = getLegacyAuthenticator();
-  if (authenticator) {
-    return authenticator.generateSecret();
-  }
-
-  const generateSecret = getExport("generateSecret");
-  if (!generateSecret) {
-    throw new Error("otplib generateSecret export is unavailable");
-  }
-
+  // 20 bytes / 160 bits — comfortably above the 128-bit floor. Never weaken.
   return generateSecret({ length: 20 });
 }
 
@@ -95,82 +97,44 @@ export function generateAuthenticatorUri(
   issuer: string,
   secret: string,
 ): string {
-  const authenticator = getLegacyAuthenticator();
-  if (authenticator) {
-    return authenticator.keyuri(label, issuer, secret);
-  }
-
-  const generateURI = getExport("generateURI");
-  if (!generateURI) {
-    throw new Error("otplib generateURI export is unavailable");
-  }
-
   return generateURI({
     strategy: "totp",
     issuer,
     label,
     secret,
-    digits: 6,
-    period: 30,
+    digits: config.digits as 6,
+    period: config.step,
   });
 }
 
 export function generateAuthenticatorToken(secret: string): string {
-  const authenticator = getLegacyAuthenticator();
-  if (authenticator) {
-    return authenticator.generate(secret);
-  }
-
-  const generateSync = getExport("generateSync");
-  if (!generateSync) {
-    throw new Error("otplib generateSync export is unavailable");
-  }
-
-  return generateSync({ strategy: "totp", secret });
-}
-
-function normalizeVerifyResult(result: ModernVerifyResult): boolean {
-  return typeof result === "boolean" ? result : result.valid;
+  assertSecretMeetsFloor(secret);
+  return generateSync({
+    strategy: "totp",
+    secret,
+    digits: config.digits as 6,
+    period: config.step,
+  });
 }
 
 export async function verifyAuthenticatorToken(
   secret: string,
   token: string,
 ): Promise<boolean> {
-  const authenticator = getLegacyAuthenticator();
-  if (authenticator) {
-    return authenticator.verify({ token, secret });
-  }
-
-  const verify = getExport("verify");
-  if (verify) {
-    return normalizeVerifyResult(
-      await verify({
-        strategy: "totp",
-        secret,
-        token,
-        epochTolerance: 30,
-      }),
-    );
-  }
-
-  const verifySync = getExport("verifySync");
-  if (verifySync) {
-    return normalizeVerifyResult(
-      verifySync({
-        strategy: "totp",
-        secret,
-        token,
-        epochTolerance: 30,
-      }),
-    );
-  }
-
-  throw new Error("otplib verify export is unavailable");
+  assertSecretMeetsFloor(secret);
+  const result = await verify({
+    strategy: "totp",
+    secret,
+    token,
+    digits: config.digits as 6,
+    period: config.step,
+    epochTolerance: epochTolerance(),
+  });
+  return result.valid;
 }
 
 export function getAuthenticatorStep(): number {
-  return getLegacyAuthenticator()?.options?.step ?? 30;
+  return config.step;
 }
 
 /**
@@ -179,25 +143,22 @@ export function getAuthenticatorStep(): number {
  * `null` when the token is invalid. This is the primitive that lets callers
  * derive the absolute time-step a code was minted for and enforce single-use
  * (replay) protection: absoluteStep = currentStep + delta.
+ *
+ * otplib v13's `verifySync` returns `{ valid, delta, timeStep, epoch }` on
+ * success, so we recover the exact delta directly (no lossy fallback needed).
  */
 export function getAuthenticatorCheckDelta(
   secret: string,
   token: string,
 ): number | null {
-  const authenticator = getLegacyAuthenticator();
-
-  if (authenticator && typeof authenticator.checkDelta === "function") {
-    const delta = authenticator.checkDelta(token, secret);
-    return typeof delta === "number" ? delta : null;
-  }
-
-  // Fallback for otplib builds that only expose a boolean check/verify: we
-  // cannot recover the exact delta, so treat a valid token as the current
-  // step (delta 0). Replay protection then degrades to same-step rejection,
-  // which is still strictly better than no protection.
-  if (authenticator && typeof authenticator.verify === "function") {
-    return authenticator.verify({ token, secret }) ? 0 : null;
-  }
-
-  throw new Error("otplib checkDelta/verify export is unavailable");
+  assertSecretMeetsFloor(secret);
+  const result = verifySync({
+    strategy: "totp",
+    secret,
+    token,
+    digits: config.digits as 6,
+    period: config.step,
+    epochTolerance: epochTolerance(),
+  });
+  return result.valid ? result.delta : null;
 }
