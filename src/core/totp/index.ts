@@ -28,6 +28,12 @@ const SALT_LENGTH = 32;
 const IV_LENGTH = 16;
 const KEY_LENGTH = 32;
 
+// Constant-time dummy secret for the unknown-user path. Must satisfy otplib
+// v13's 128-bit (16-byte) minimum secret length, otherwise verification of the
+// dummy throws SecretTooShortError instead of running the constant-time work.
+// 32 Base32 chars = 160 bits = 20 bytes.
+const DUMMY_SECRET = "JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP";
+
 export interface TOTPServiceConfig {
   encryptionKey: string;
 
@@ -117,8 +123,7 @@ export class TOTPService {
 
     return await timingSafeVerify(async () => {
       if (!secretOrNull) {
-        const dummySecret = "JBSWY3DPEHPK3PXP";
-        await verifyAuthenticatorToken(dummySecret, cleanToken);
+        await verifyAuthenticatorToken(DUMMY_SECRET, cleanToken);
         return false;
       }
 
@@ -174,7 +179,7 @@ export class TOTPService {
     const valid = await timingSafeVerify(async () => {
       if (!secretOrNull) {
         // Constant-time dummy path for unknown users.
-        getAuthenticatorCheckDelta("JBSWY3DPEHPK3PXP", cleanToken);
+        getAuthenticatorCheckDelta(DUMMY_SECRET, cleanToken);
         return false;
       }
 
