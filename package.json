@@ -90,7 +90,7 @@
     "@types/qrcode": "^1.5.5",
     "svelte": "^5.0.0",
     "publint": "^0.3.18",
-    "typescript": "^5.0.0",
+    "typescript": "^6.0.3",
     "vitest": "^4.0.0"
   },
   "peerDependencies": {
