@@ -78,14 +78,14 @@
     "url": "git+https://github.com/tinyland-inc/tinyland-auth.git"
   },
   "dependencies": {
-    "bcryptjs": "^2.4.3",
+    "bcryptjs": "^3.0.3",
     "nanoid": "^5.0.7",
     "otplib": "^13.4.1",
     "qrcode": "^1.5.3"
   },
   "devDependencies": {
     "@sveltejs/kit": "^2.0.0",
-    "@types/bcryptjs": "^2.4.6",
+    "@types/bcryptjs": "^3.0.0",
     "@types/node": "^26.1.1",
     "@types/qrcode": "^1.5.5",
     "svelte": "^5.0.0",
