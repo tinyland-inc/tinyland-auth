@@ -2,7 +2,6 @@ import {
   AdminRole,
   createAuthConfig,
   createBackupCodeSet,
-  createInvitationService,
   createSessionManager,
   generateBackupCodes,
   hashPassword,
@@ -12,6 +11,11 @@ import {
   type AdminUser,
   type SessionMetadata,
 } from '../src/index.js';
+// InvitationService is internal-only (not on the public surface — TIN-2780).
+// Real consumers use the fail-closed @tummycrypt/tinyland-invitation package;
+// this example imports the internal module directly for demonstration and
+// guards the role itself via canInviteForRole before minting.
+import { createInvitationService } from '../src/modules/invitation/index.js';
 
 export interface FingerprintEvidence {
   visitorId?: string;

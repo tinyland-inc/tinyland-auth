@@ -1,5 +1,31 @@
 # @tummycrypt/tinyland-auth
 
+## 0.7.0
+
+### Major Changes
+
+- **BREAKING (TIN-2780): `InvitationService` is no longer exported.** The package
+  public surface previously re-exported a local `InvitationService` /
+  `createInvitationService` whose `createInvitation` performed **zero role
+  authorization** — the caller's requested `role` flowed straight into the minted
+  invite. A fresh consumer reaching for it got an ungated, fail-open duplicate.
+
+  The authoritative, **fail-closed** invite flow is the standalone
+  [`@tummycrypt/tinyland-invitation`](https://github.com/tinyland-inc/tinyland-invitation)
+  package, ratified as the single invitation role-authority under **TIN-1607**
+  (consolidation decision: tinyland.dev PR #649). Its default enforces the real
+  role hierarchy (mirrors `canManageRole`) and `createInvitation` throws
+  `InvitationError` when the actor may not mint the target role.
+
+  **Migration:** replace any
+  `import { InvitationService, createInvitationService } from '@tummycrypt/tinyland-auth'`
+  with the standalone package and thread `createdByRole`. The removed symbols
+  (`InvitationService`, `createInvitationService`, `InvitationServiceConfig`,
+  `CreateInvitationOptions`, `CreateInvitationResult`) are no longer reachable —
+  the package `exports` map exposes no `./invitation` subpath. RBAC helpers
+  (`canManageRole`, `canInviteForRole`) and the `InvitationStorage` interface are
+  unaffected.
+
 ## 0.6.0
 
 ### Minor Changes
