@@ -31,6 +31,25 @@ scope. It is not the current Tinyland publication authority for this repo.
 - `./cred-gen` — credential generation and display
 - `./validation` — input validation utilities
 
+## Invitation Authority
+
+`@tummycrypt/tinyland-auth` does not export an invitation service or factory.
+Use `@tummycrypt/tinyland-invitation` version `>=0.2.5` for fail-closed
+invitation authorization, minting, acceptance, revocation, and lifecycle
+management, composed with the downstream application that owns user creation.
+
+The type-only `AdminInvitation`, `InvitationConfig`, `InvitationStorage`, and
+invitation request/response DTO exports remain intentionally available, as do
+the invitation-record methods on the built-in storage adapters. These are
+compatibility surfaces for persisted data; they neither generate tokens nor
+authorize minting, acceptance, roles, or user creation.
+
+The invitation `0.2.5` release has a per-token acceptance lock, but that
+lock is process-local. It serializes acceptance only within one Node.js process
+and is not a distributed or cross-replica compare-and-set. Consumers sharing
+invitation storage across processes or replicas still need a storage-backed CAS
+before claiming exactly-once acceptance.
+
 ## Storage Adapters
 
 Implement `IStorageAdapter` for your backend:

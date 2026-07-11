@@ -30,7 +30,7 @@ corresponds to the released package artifact.
 | --- | --- | --- |
 | Directory actor | application storage adapter | handle-first actor record, optional contact email |
 | Auth capability | `@tummycrypt/tinyland-auth` | sessions, TOTP, backup codes, RBAC checks, storage contracts |
-| Invitation lifecycle | `@tummycrypt/tinyland-auth` invitation module, or a configured app-owned adapter | create, list, revoke, and mark invite tokens used |
+| Invitation lifecycle | `@tummycrypt/tinyland-invitation >=0.2.5` | fail-closed role authorization, create, list, revoke, and accept invite tokens |
 | Provider identity | app-local adapter | GitHub, future OAuth/OIDC providers, bootstrap/link policy |
 | Client evidence | `@tummycrypt/tinyland-fingerprint` plus app client code | FingerprintJS visitor evidence and consent state |
 | Overlay evidence | `@tummycrypt/tinyland-otel` plus app server code | Tempo/TraceQL restore and investigation plane |
@@ -53,8 +53,9 @@ create and authenticate users with only:
 - role and capability policy
 - TOTP/backup-code state when enabled
 
-The MVP test creates both the bootstrap admin and invited GitHub-linked user
-without email addresses.
+The MVP test creates a bootstrap admin without an email address. It does not
+accept an invitation, trust caller-provided role data, or create a user on
+behalf of the invitation package.
 
 ## Minimal Flow
 
@@ -64,7 +65,6 @@ import {
   TOTPService,
   createAuthConfig,
   createBackupCodeSet,
-  createInvitationService,
   createSessionManager,
   generateBackupCodes,
   hashPassword,
@@ -79,17 +79,34 @@ import {
 4. Generate backup codes, persist the hashed code set, and verify one code.
 5. Create an auth session. A fingerprint may be added as metadata, but is not
    required.
-6. Create an invite with no email address.
-7. Accept the invite in the application layer by creating the target actor and
-   marking the invite as used.
-8. For GitHub OAuth, verify the provider identity in app-local code, link it to
-   the directory actor, then create a normal `tinyland-auth` session.
+
+## Invitation Acceptance Is External
+
+The executable auth MVP intentionally stops before invitation acceptance. It
+does not define an invitation handoff, assign an invitation role, or create a
+user from caller-supplied invitation data. Real create/accept/user-create proof
+belongs to `@tummycrypt/tinyland-invitation >=0.2.5` composed in a downstream
+clean-consumer integration that resolves both package surfaces without a
+workspace or vendored fallback.
+
+Version `0.2.5` is the minimum invitation authority because it supplies the
+fail-closed role gate and claim-first acceptance ordering. Its per-token
+acceptance lock is process-local: it serializes acceptance only
+within one Node.js process. It is not a distributed or cross-replica
+compare-and-set. Distributed exactly-once acceptance remains open until shared
+storage can atomically claim a token.
+
+`tinyland-auth` intentionally retains type-only `AdminInvitation`,
+`InvitationConfig`, `InvitationStorage`, and invitation request/response DTOs,
+plus invitation-record CRUD on its storage adapters. Those surfaces preserve
+data compatibility only; they are not executable mint or acceptance authority.
 
 ## What tinyland.dev Should Own
 
 `tinyland.dev` remains responsible for:
 
 - SvelteKit route actions, redirects, and cookies
+- canonical invitation configuration and post-accept user creation
 - GitHub OAuth callback validation and allowlist policy
 - bootstrap policy such as who may become `super_admin`
 - UI and form validation
@@ -106,7 +123,10 @@ The downstream app should add tests that prove:
 
 - login and session validation do not require a fingerprint
 - changed fingerprints do not invalidate valid sessions
-- invite routes use package RBAC policy instead of route-hardcoded role lists
+- clean-consumer invitation tests use `@tummycrypt/tinyland-invitation >=0.2.5`
+  as their only mint/accept authority and preserve its fail-closed role gate
+- distributed consumers do not claim exactly-once invite acceptance without a
+  storage-backed compare-and-set
 - GitHub OAuth creates a package session only after app-local provider checks
 - `MODULE.bazel` and Bazel package targets prove released auth-adjacent modules,
   not only pnpm workspace resolution

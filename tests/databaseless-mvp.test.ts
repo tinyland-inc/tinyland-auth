@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { runTinylandDatabaselessAuthMvp } from '../examples/tinyland-databaseless-auth-mvp.js';
 
 describe('Tinyland databaseless auth MVP', () => {
-  it('proves the handle-first auth, invite, TOTP, session, and provider handoff shape', async () => {
+  it('proves handle-first auth primitives without simulating invitation acceptance', async () => {
     const result = await runTinylandDatabaselessAuthMvp();
 
     expect(result.admin.handle).toBe('jesssullivan');
@@ -16,28 +16,12 @@ describe('Tinyland databaseless auth MVP', () => {
     expect(result.backupCodes.accepted).toBe(true);
     expect(result.backupCodes.remaining).toBe(2);
 
-    expect(result.invitation.role).toBe('contributor');
-    expect(result.invitation.email).toBeUndefined();
-    expect(result.invitation.pendingAfterAccept).toBe(0);
-
-    expect(result.invitedUser.handle).toBe('trashmonitor');
-    expect(result.invitedUser.email).toBeUndefined();
-    expect(result.invitedUser.githubId).toBe(424242);
-    expect(result.invitedUser.githubLogin).toBe('trashmonitor');
-
     expect(result.sessions.passwordSessionValidWithoutFingerprint).toBe(true);
-    expect(result.sessions.providerSessionFingerprint).toBe(
+    expect(result.sessions.evidenceSessionFingerprint).toBe(
       'fp_tinyland_demo_visitor',
     );
-    expect(result.sessions.providerSessionValidWithFingerprintEvidence).toBe(
+    expect(result.sessions.evidenceSessionValidWithFingerprintEvidence).toBe(
       true,
     );
-
-    expect(result.provider).toEqual({
-      provider: 'github',
-      providerUserId: '424242',
-      login: 'trashmonitor',
-      twoFactorVerifiedByProvider: true,
-    });
   });
 });

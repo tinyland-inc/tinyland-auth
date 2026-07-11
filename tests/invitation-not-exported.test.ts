@@ -39,4 +39,19 @@ describe('invitation service is not on the public surface (TIN-2780)', () => {
     // The local invitation module must not be re-exported from the public index.
     expect(indexSource).not.toMatch(/export\s*\{[^}]*}\s*from\s*['"]\.\/modules\/invitation\/index\.js['"]/s);
   });
+
+  it('keeps the executable MVP auth-only and documents downstream invitation authority', async () => {
+    const example = await readText('examples/tinyland-databaseless-auth-mvp.ts');
+    const mvpDoc = await readText('docs/tinyland-databaseless-auth-mvp.md');
+    const readme = await readText('README.md');
+    const normalizedMvpDoc = mvpDoc.replace(/\s+/g, ' ');
+
+    expect(example).not.toMatch(/invitation|invite|invited/i);
+    expect(mvpDoc).toContain('`@tummycrypt/tinyland-invitation >=0.2.5`');
+    expect(normalizedMvpDoc).toContain('downstream clean-consumer integration');
+    expect(mvpDoc).toContain('lock is process-local');
+    expect(mvpDoc).toContain('distributed or cross-replica');
+    expect(readme).toContain('version `>=0.2.5`');
+    expect(readme).toContain('lock is process-local');
+  });
 });

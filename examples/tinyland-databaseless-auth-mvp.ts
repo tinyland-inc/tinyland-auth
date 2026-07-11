@@ -11,11 +11,6 @@ import {
   type AdminUser,
   type SessionMetadata,
 } from '../src/index.js';
-// InvitationService is internal-only (not on the public surface — TIN-2780).
-// Real consumers use the fail-closed @tummycrypt/tinyland-invitation package;
-// this example imports the internal module directly for demonstration and
-// guards the role itself via canInviteForRole before minting.
-import { createInvitationService } from '../src/modules/invitation/index.js';
 
 export interface FingerprintEvidence {
   visitorId?: string;
@@ -23,19 +18,8 @@ export interface FingerprintEvidence {
   consentState?: 'granted' | 'denied' | 'unknown';
 }
 
-export interface ProviderIdentity {
-  provider: 'github';
-  providerUserId: string;
-  login: string;
-  twoFactorVerifiedByProvider: boolean;
-}
-
 export interface TinylandDatabaselessAuthMvpResult {
   admin: Pick<AdminUser, 'id' | 'handle' | 'email' | 'role' | 'totpEnabled'>;
-  invitedUser: Pick<
-    AdminUser,
-    'id' | 'handle' | 'email' | 'role' | 'githubId' | 'githubLogin'
-  >;
   totp: {
     verified: boolean;
     storedForHandle: string;
@@ -44,17 +28,11 @@ export interface TinylandDatabaselessAuthMvpResult {
     accepted: boolean;
     remaining: number;
   };
-  invitation: {
-    role: AdminRole;
-    email?: string;
-    pendingAfterAccept: number;
-  };
   sessions: {
     passwordSessionValidWithoutFingerprint: boolean;
-    providerSessionFingerprint?: string;
-    providerSessionValidWithFingerprintEvidence: boolean;
+    evidenceSessionFingerprint?: string;
+    evidenceSessionValidWithFingerprintEvidence: boolean;
   };
-  provider: ProviderIdentity;
 }
 
 const ENCRYPTION_KEY = 'tinyland-auth-mvp-demo-key-32-chars';
@@ -74,8 +52,7 @@ function sessionMetadata(evidence?: FingerprintEvidence): SessionMetadata {
 }
 
 function handleOnlyUser(
-  fields: Pick<AdminUser, 'handle' | 'displayName' | 'role'> &
-    Partial<Pick<AdminUser, 'githubId' | 'githubLogin' | 'githubLinkedAt'>>,
+  fields: Pick<AdminUser, 'handle' | 'displayName' | 'role'>,
 ): Omit<AdminUser, 'id'> {
   const timestamp = nowIso();
 
@@ -90,9 +67,6 @@ function handleOnlyUser(
     onboardingStep: 0,
     createdAt: timestamp,
     updatedAt: timestamp,
-    githubId: fields.githubId,
-    githubLogin: fields.githubLogin,
-    githubLinkedAt: fields.githubLinkedAt,
   };
 }
 
@@ -106,12 +80,6 @@ export async function runTinylandDatabaselessAuthMvp(): Promise<TinylandDatabase
       maxAge: 24 * 60 * 60 * 1000,
       renewThreshold: 60 * 60 * 1000,
       maxConcurrentSessions: 1,
-    },
-    invitation: {
-      ...defaults.invitation,
-      defaultExpiryHours: 24,
-      maxActiveInvitations: 5,
-      allowEmailOverride: false,
     },
   });
 
@@ -175,64 +143,17 @@ export async function runTinylandDatabaselessAuthMvp(): Promise<TinylandDatabase
     passwordSession.id,
   );
 
-  const invitationService = createInvitationService({
-    storage,
-    config: config.invitation,
-    baseUrl: config.appUrl,
-    totpIssuer: config.appName,
-  });
-
-  if (!invitationService.canInviteForRole(admin.role, AdminRole.CONTRIBUTOR)) {
-    throw new Error('MVP expected super_admin to invite a contributor');
-  }
-
-  const invitationResult = await invitationService.createInvitation({
-    role: AdminRole.CONTRIBUTOR,
-    createdBy: admin.id,
-    createdByHandle: admin.handle,
-    message: 'Handle-only invite for the Tinyland auth MVP',
-  });
-
-  if (!invitationResult.success || !invitationResult.invitation) {
-    throw new Error(invitationResult.error ?? 'MVP failed to create invite');
-  }
-
-  const provider: ProviderIdentity = {
-    provider: 'github',
-    providerUserId: '424242',
-    login: 'trashmonitor',
-    twoFactorVerifiedByProvider: true,
-  };
-
-  const invitedDraft = handleOnlyUser({
-    handle: provider.login,
-    displayName: 'Trash Monitor',
-    role: invitationResult.invitation.role,
-    githubId: Number(provider.providerUserId),
-    githubLogin: provider.login,
-    githubLinkedAt: nowIso(),
-  });
-  invitedDraft.passwordHash = await hashPassword('invite accepted locally', {
-    rounds: 4,
-  });
-
-  const invitedUser = await storage.createUser(invitedDraft);
-  await invitationService.markAsUsed(
-    invitationResult.invitation.token,
-    invitedUser.id,
-  );
-
-  const providerSession = await sessionManager.createSession(
-    invitedUser.id,
-    invitedUser,
+  const evidenceSession = await sessionManager.createSession(
+    admin.id,
+    admin,
     sessionMetadata({
       visitorId: 'fp_tinyland_demo_visitor',
       tempoTraceId: 'trace-demo-auth-001',
       consentState: 'granted',
     }),
   );
-  const validatedProviderSession = await sessionManager.validateSession(
-    providerSession.id,
+  const validatedEvidenceSession = await sessionManager.validateSession(
+    evidenceSession.id,
   );
 
   return {
@@ -243,14 +164,6 @@ export async function runTinylandDatabaselessAuthMvp(): Promise<TinylandDatabase
       role: admin.role,
       totpEnabled: admin.totpEnabled,
     },
-    invitedUser: {
-      id: invitedUser.id,
-      handle: invitedUser.handle,
-      email: invitedUser.email,
-      role: invitedUser.role,
-      githubId: invitedUser.githubId,
-      githubLogin: invitedUser.githubLogin,
-    },
     totp: {
       verified: totpVerified,
       storedForHandle: storedTotp.handle,
@@ -259,21 +172,14 @@ export async function runTinylandDatabaselessAuthMvp(): Promise<TinylandDatabase
       accepted: backupVerification.valid,
       remaining: backupVerification.codesRemaining,
     },
-    invitation: {
-      role: invitationResult.invitation.role,
-      email: invitationResult.invitation.email,
-      pendingAfterAccept: (await invitationService.listPendingInvitations())
-        .length,
-    },
     sessions: {
       passwordSessionValidWithoutFingerprint: Boolean(
         validatedPasswordSession,
       ),
-      providerSessionFingerprint: providerSession.browserFingerprint,
-      providerSessionValidWithFingerprintEvidence: Boolean(
-        validatedProviderSession,
+      evidenceSessionFingerprint: evidenceSession.browserFingerprint,
+      evidenceSessionValidWithFingerprintEvidence: Boolean(
+        validatedEvidenceSession,
       ),
     },
-    provider,
   };
 }
