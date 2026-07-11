@@ -49,26 +49,39 @@ Tinyland's intended app shape is handle-first and email-less by default:
 - GitHub OAuth is an app-local provider handoff that creates a normal package
   session after provider policy passes
 
+"Databaseless" describes the storage model (no external database dependency),
+not a scale-out guarantee. The built-in `FileStorageAdapter` capability plane
+is **single-replica dbless**: safe for the single-replica deployments this
+package ships against today, but concurrent multi-replica writers need a
+storage-layer compare-and-swap that `IStorageAdapter` does not currently
+require or provide. Consumers running more than one replica need a
+CAS-capable adapter (e.g. a Postgres/Redis-backed `IStorageAdapter`) or must
+stay pinned to a single replica. The `ha.tinyland.dev/*` exception recorded on
+the mothership's staging manifests is the current, honest SSOT statement of
+that constraint in production — it documents the single-replica posture, it
+does not relax it.
+
 See the
 [Tinyland databaseless auth MVP](https://github.com/tinyland-inc/tinyland-auth/blob/main/docs/tinyland-databaseless-auth-mvp.md)
 and the
 [executable example](https://github.com/tinyland-inc/tinyland-auth/blob/main/examples/tinyland-databaseless-auth-mvp.ts).
 
-### Browser-as-a-factor (fingerprint doctrine)
+### Browser fingerprint (anomaly-evidence signal, not an auth factor)
 
-> Browser-as-a-factor (operator-canonized 2026-07-05): the Tempo-derived
-> browser fingerprint (tinyland-fingerprint — UA-parse + Tempo evidence, NOT
-> the fingerprintjs library) is not a traditional factor but correctly
-> represents the user by print as a viable element of
-> user-proof-during-session, enabling cookieless / localStorage-less
-> persistent sessions with browser-backed persistence — the novel tempo +
-> print + factors stack iterated for over a year. Boundary invariant
-> (TIN-1610, ratified): the print is evidence at the credential boundary,
-> never a veto — validateSession() never destroys an authenticated session on
-> a missing/changed fingerprint. The two truths are LAYERED, not
-> contradictory: evidence-only at the credential boundary; a
-> session-persistence factor at the product layer. Do not flatten either half
-> away.
+> Fingerprint evidence (operator-canonized 2026-07-05, reworded 2026-07-11 to
+> retire the "factor" framing): the Tempo-derived browser fingerprint
+> (tinyland-fingerprint — UA-parse + Tempo evidence, NOT the fingerprintjs
+> library) is an anomaly-evidence signal, not an enforced authentication
+> factor at any layer. It is recorded, not vetoed, by design — a mismatch is
+> logged and emitted as discarded OTLP evidence, and it never gates,
+> destroys, or is required to establish a session (see the consuming app's
+> `fingerprintValidationHandle`, e.g. tinyland.dev `src/hooks.server.ts`
+> ~L926-944). Boundary invariant (TIN-1610, ratified): the print is evidence
+> at the credential boundary only — `validateSession()` never destroys an
+> authenticated session on a missing/changed fingerprint. Do not describe
+> this mechanism as "browser-as-a-factor" in product docs; it supplies
+> anomaly-detection evidence and a best-effort persistence hint, not a
+> credential.
 
 Cross-references: TIN-1610 (evidence-not-veto boundary invariant),
 [`@tummycrypt/tinyland-fingerprint` v0.3.0](https://github.com/tinyland-inc/tinyland-fingerprint)
