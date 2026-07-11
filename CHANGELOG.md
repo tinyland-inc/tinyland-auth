@@ -1,5 +1,16 @@
 # @tummycrypt/tinyland-auth
 
+## 0.6.1
+
+### Patch Changes
+
+- Migrate the TOTP compatibility layer to otplib v13's stateless functional
+  API while preserving the configured verification window and exact time-step
+  delta used by replay protection. Fresh secrets retain a 160-bit floor,
+  legacy sub-128-bit secrets now fail closed with an explicit re-enrollment
+  error, and the unknown-user timing path uses a valid dummy secret.
+- Refresh bcryptjs, its type definitions, TypeScript, and Node type tooling.
+
 ## 0.6.0
 
 ### Minor Changes
