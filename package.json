@@ -52,6 +52,7 @@
   "scripts": {
     "build": "tsc",
     "check:invitation-authority": "node scripts/check-invitation-authority.mjs",
+    "check:release-metadata": "node scripts/check-release-metadata.mjs",
     "dev": "tsc --watch",
     "clean": "rm -rf dist",
     "check:package": "publint",
