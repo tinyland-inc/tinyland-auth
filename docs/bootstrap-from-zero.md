@@ -5,12 +5,13 @@ It takes a brand-new SvelteKit app and wires it up to a working house-native
 password plus TOTP login with a first `super_admin`, using only the public
 `0.6.1` API.
 
-Everything below is grounded in the shipped `0.6.1` source. Each API is cited to
+Everything below is grounded in the staged `0.6.1` source. Each API is cited to
 its source file at the end (see "Provenance"). Where a snippet fills an
 integration seam that the package does not itself export, it is labelled
 `ILLUSTRATIVE` so you can tell verified package API from glue you supply.
 
-Pin `0.6.1`. This guide is written against that exact release.
+Target `0.6.1` once it resolves from your configured package authority. This
+guide is written against that exact source surface.
 
 ## What you get
 
