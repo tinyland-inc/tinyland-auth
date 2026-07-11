@@ -55,6 +55,8 @@ vitest_bin.vitest_test(
         "BUILD.bazel",
         "MODULE.bazel",
         "README.md",
+        "scripts/check-invitation-authority.mjs",
+        "scripts/ci-bazel-test.sh",
         ":node_modules",
         ":node_modules/vitest",
         "package.json",

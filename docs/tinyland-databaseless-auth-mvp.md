@@ -30,7 +30,7 @@ corresponds to the released package artifact.
 | --- | --- | --- |
 | Directory actor | application storage adapter | handle-first actor record, optional contact email |
 | Auth capability | `@tummycrypt/tinyland-auth` | sessions, TOTP, backup codes, RBAC checks, storage contracts |
-| Invitation lifecycle | `@tummycrypt/tinyland-invitation` | fail-closed role authorization, create, list, revoke, and accept invite tokens |
+| Invitation lifecycle | `@tummycrypt/tinyland-invitation >=0.2.4` | fail-closed role authorization, create, list, revoke, and accept invite tokens |
 | Provider identity | app-local adapter | GitHub, future OAuth/OIDC providers, bootstrap/link policy |
 | Client evidence | `@tummycrypt/tinyland-fingerprint` plus app client code | FingerprintJS visitor evidence and consent state |
 | Overlay evidence | `@tummycrypt/tinyland-otel` plus app server code | Tempo/TraceQL restore and investigation plane |
@@ -53,9 +53,9 @@ create and authenticate users with only:
 - role and capability policy
 - TOTP/backup-code state when enabled
 
-The MVP test creates both the bootstrap admin and invited GitHub-linked user
-without email addresses. It consumes an already-authorized invitation handoff
-from `@tummycrypt/tinyland-invitation`; it does not mint invitations itself.
+The MVP test creates a bootstrap admin without an email address. It does not
+accept an invitation, trust caller-provided role data, or create a user on
+behalf of the invitation package.
 
 ## Minimal Flow
 
@@ -70,12 +70,6 @@ import {
   hashPassword,
   verifyBackupCode,
 } from '@tummycrypt/tinyland-auth';
-
-import {
-  acceptInvitation,
-  configure as configureInvitations,
-  createInvitation,
-} from '@tummycrypt/tinyland-invitation';
 ```
 
 1. Create a storage adapter. The MVP uses `MemoryStorageAdapter`; production
@@ -85,17 +79,35 @@ import {
 4. Generate backup codes, persist the hashed code set, and verify one code.
 5. Create an auth session. A fingerprint may be added as metadata, but is not
    required.
-6. Configure `@tummycrypt/tinyland-invitation`, then create and accept the
-   invite through its fail-closed role gate. Pass only the accepted role and
-   optional contact email into the auth actor creation boundary.
-7. For GitHub OAuth, verify the provider identity in app-local code, link it to
-   the directory actor, then create a normal `tinyland-auth` session.
+
+## Invitation Acceptance Is External
+
+The executable auth MVP intentionally stops before invitation acceptance. It
+does not define an invitation handoff type or create a role-bearing user from
+caller-supplied invitation data. The canonical create/accept/user-create proof
+belongs to `@tummycrypt/tinyland-invitation >=0.2.4` and a downstream
+clean-consumer integration that resolves both released packages without a
+workspace or vendored fallback.
+
+Version `0.2.4` is the minimum invitation authority because it supplies the
+fail-closed default role gate. Current `tinyland-invitation` `main`, including
+[PR #10](https://github.com/tinyland-inc/tinyland-invitation/pull/10), improves
+single-use acceptance by serializing one token within one Node process. It does
+not provide a cross-process or cross-replica compare-and-set. Distributed
+exactly-once acceptance remains open until the shared storage authority can
+atomically claim a token.
+
+`tinyland-auth` intentionally retains type-only `AdminInvitation`,
+`InvitationConfig`, `InvitationStorage`, and invitation request/response DTOs,
+plus invitation-record CRUD on its storage adapters. Those surfaces preserve
+data compatibility only; they are not executable mint or acceptance authority.
 
 ## What tinyland.dev Should Own
 
 `tinyland.dev` remains responsible for:
 
 - SvelteKit route actions, redirects, and cookies
+- canonical invitation configuration and post-accept user creation
 - GitHub OAuth callback validation and allowlist policy
 - bootstrap policy such as who may become `super_admin`
 - UI and form validation
@@ -112,8 +124,10 @@ The downstream app should add tests that prove:
 
 - login and session validation do not require a fingerprint
 - changed fingerprints do not invalidate valid sessions
-- invite routes use `@tummycrypt/tinyland-invitation` as their only minting
-  authority and preserve its fail-closed role gate
+- clean-consumer invitation tests use `@tummycrypt/tinyland-invitation >=0.2.4`
+  as their only mint/accept authority and preserve its fail-closed role gate
+- distributed consumers do not claim exactly-once invite acceptance without a
+  storage-backed compare-and-set
 - GitHub OAuth creates a package session only after app-local provider checks
 - `MODULE.bazel` and Bazel package targets prove released auth-adjacent modules,
   not only pnpm workspace resolution

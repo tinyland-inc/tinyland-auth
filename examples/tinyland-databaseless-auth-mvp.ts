@@ -18,25 +18,8 @@ export interface FingerprintEvidence {
   consentState?: 'granted' | 'denied' | 'unknown';
 }
 
-export interface ProviderIdentity {
-  provider: 'github';
-  providerUserId: string;
-  login: string;
-  twoFactorVerifiedByProvider: boolean;
-}
-
-export interface AcceptedInvitationHandoff {
-  authority: '@tummycrypt/tinyland-invitation';
-  role: AdminRole;
-  email?: string;
-}
-
 export interface TinylandDatabaselessAuthMvpResult {
   admin: Pick<AdminUser, 'id' | 'handle' | 'email' | 'role' | 'totpEnabled'>;
-  invitedUser: Pick<
-    AdminUser,
-    'id' | 'handle' | 'email' | 'role' | 'githubId' | 'githubLogin'
-  >;
   totp: {
     verified: boolean;
     storedForHandle: string;
@@ -45,17 +28,11 @@ export interface TinylandDatabaselessAuthMvpResult {
     accepted: boolean;
     remaining: number;
   };
-  invitation: {
-    authority: '@tummycrypt/tinyland-invitation';
-    role: AdminRole;
-    email?: string;
-  };
   sessions: {
     passwordSessionValidWithoutFingerprint: boolean;
-    providerSessionFingerprint?: string;
-    providerSessionValidWithFingerprintEvidence: boolean;
+    evidenceSessionFingerprint?: string;
+    evidenceSessionValidWithFingerprintEvidence: boolean;
   };
-  provider: ProviderIdentity;
 }
 
 const ENCRYPTION_KEY = 'tinyland-auth-mvp-demo-key-32-chars';
@@ -75,8 +52,7 @@ function sessionMetadata(evidence?: FingerprintEvidence): SessionMetadata {
 }
 
 function handleOnlyUser(
-  fields: Pick<AdminUser, 'handle' | 'displayName' | 'role'> &
-    Partial<Pick<AdminUser, 'githubId' | 'githubLogin' | 'githubLinkedAt'>>,
+  fields: Pick<AdminUser, 'handle' | 'displayName' | 'role'>,
 ): Omit<AdminUser, 'id'> {
   const timestamp = nowIso();
 
@@ -91,15 +67,10 @@ function handleOnlyUser(
     onboardingStep: 0,
     createdAt: timestamp,
     updatedAt: timestamp,
-    githubId: fields.githubId,
-    githubLogin: fields.githubLogin,
-    githubLinkedAt: fields.githubLinkedAt,
   };
 }
 
-export async function runTinylandDatabaselessAuthMvp(
-  acceptedInvitation: AcceptedInvitationHandoff,
-): Promise<TinylandDatabaselessAuthMvpResult> {
+export async function runTinylandDatabaselessAuthMvp(): Promise<TinylandDatabaselessAuthMvpResult> {
   const defaults = createAuthConfig();
   const config = createAuthConfig({
     appName: 'Tinyland Auth MVP',
@@ -172,39 +143,17 @@ export async function runTinylandDatabaselessAuthMvp(
     passwordSession.id,
   );
 
-  const provider: ProviderIdentity = {
-    provider: 'github',
-    providerUserId: '424242',
-    login: 'trashmonitor',
-    twoFactorVerifiedByProvider: true,
-  };
-
-  const invitedDraft = handleOnlyUser({
-    handle: provider.login,
-    displayName: 'Trash Monitor',
-    role: acceptedInvitation.role,
-    githubId: Number(provider.providerUserId),
-    githubLogin: provider.login,
-    githubLinkedAt: nowIso(),
-  });
-  invitedDraft.email = acceptedInvitation.email;
-  invitedDraft.passwordHash = await hashPassword('invite accepted locally', {
-    rounds: 4,
-  });
-
-  const invitedUser = await storage.createUser(invitedDraft);
-
-  const providerSession = await sessionManager.createSession(
-    invitedUser.id,
-    invitedUser,
+  const evidenceSession = await sessionManager.createSession(
+    admin.id,
+    admin,
     sessionMetadata({
       visitorId: 'fp_tinyland_demo_visitor',
       tempoTraceId: 'trace-demo-auth-001',
       consentState: 'granted',
     }),
   );
-  const validatedProviderSession = await sessionManager.validateSession(
-    providerSession.id,
+  const validatedEvidenceSession = await sessionManager.validateSession(
+    evidenceSession.id,
   );
 
   return {
@@ -215,14 +164,6 @@ export async function runTinylandDatabaselessAuthMvp(
       role: admin.role,
       totpEnabled: admin.totpEnabled,
     },
-    invitedUser: {
-      id: invitedUser.id,
-      handle: invitedUser.handle,
-      email: invitedUser.email,
-      role: invitedUser.role,
-      githubId: invitedUser.githubId,
-      githubLogin: invitedUser.githubLogin,
-    },
     totp: {
       verified: totpVerified,
       storedForHandle: storedTotp.handle,
@@ -231,20 +172,14 @@ export async function runTinylandDatabaselessAuthMvp(
       accepted: backupVerification.valid,
       remaining: backupVerification.codesRemaining,
     },
-    invitation: {
-      authority: acceptedInvitation.authority,
-      role: acceptedInvitation.role,
-      email: acceptedInvitation.email,
-    },
     sessions: {
       passwordSessionValidWithoutFingerprint: Boolean(
         validatedPasswordSession,
       ),
-      providerSessionFingerprint: providerSession.browserFingerprint,
-      providerSessionValidWithFingerprintEvidence: Boolean(
-        validatedProviderSession,
+      evidenceSessionFingerprint: evidenceSession.browserFingerprint,
+      evidenceSessionValidWithFingerprintEvidence: Boolean(
+        validatedEvidenceSession,
       ),
     },
-    provider,
   };
 }

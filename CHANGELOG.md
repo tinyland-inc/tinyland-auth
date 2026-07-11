@@ -6,10 +6,13 @@
 
 - Remove the duplicate `InvitationService` and `createInvitationService`
   exports. Invitation minting and lifecycle authority now live exclusively in
-  `@tummycrypt/tinyland-invitation`, whose default role gate fails closed.
-  Existing invitation record types and storage adapter methods remain for
-  persistence compatibility. Consumers must migrate service imports before the
-  next release. (TIN-2780; authority ratified in TIN-1607.)
+  `@tummycrypt/tinyland-invitation >=0.2.4`, whose default role gate fails
+  closed. Existing invitation data/config/API types, `InvitationStorage`, and
+  storage adapter record methods remain for persistence compatibility.
+  `tinyland-invitation` PR #10 on current `main` improves single-use acceptance
+  within one Node process; distributed exactly-once acceptance still requires a
+  storage-backed compare-and-set. Consumers must migrate service imports before
+  the next release. (TIN-2780; authority ratified in TIN-1607.)
 
 ## 0.6.0
 

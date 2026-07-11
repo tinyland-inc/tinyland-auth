@@ -34,12 +34,23 @@ scope. It is not the current Tinyland publication authority for this repo.
 ## Invitation Authority
 
 `@tummycrypt/tinyland-auth` does not export an invitation service or factory.
-Use `@tummycrypt/tinyland-invitation` for fail-closed invitation authorization,
-minting, acceptance, revocation, and lifecycle management.
+Use `@tummycrypt/tinyland-invitation` version `>=0.2.4` for fail-closed
+invitation authorization, minting, acceptance, revocation, and lifecycle
+management.
 
-The invitation record types and storage adapter methods in this package remain
-compatibility surfaces for persisting application state. They do not generate
-tokens or authorize a caller to mint an invitation.
+The type-only `AdminInvitation`, `InvitationConfig`, `InvitationStorage`, and
+invitation request/response DTO exports remain intentionally available, as do
+the invitation-record methods on the built-in storage adapters. These are
+compatibility surfaces for persisting application state; they neither generate
+tokens nor authorize a caller to mint an invitation.
+
+The released `0.2.4` authority supplies the fail-closed role gate. Current
+`tinyland-invitation` `main`, including
+[PR #10](https://github.com/tinyland-inc/tinyland-invitation/pull/10),
+additionally serializes one-token acceptance within one Node process. That is
+not a distributed compare-and-set: consumers sharing invitation storage across
+processes or replicas still need a storage-backed CAS before claiming
+exactly-once acceptance.
 
 ## Storage Adapters
 
