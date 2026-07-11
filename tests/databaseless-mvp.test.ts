@@ -1,9 +1,13 @@
 import { describe, expect, it } from 'vitest';
+import { AdminRole } from '../src/index.js';
 import { runTinylandDatabaselessAuthMvp } from '../examples/tinyland-databaseless-auth-mvp.js';
 
 describe('Tinyland databaseless auth MVP', () => {
-  it('proves the handle-first auth, invite, TOTP, session, and provider handoff shape', async () => {
-    const result = await runTinylandDatabaselessAuthMvp();
+  it('proves the handle-first auth, authorized invite handoff, TOTP, session, and provider shape', async () => {
+    const result = await runTinylandDatabaselessAuthMvp({
+      authority: '@tummycrypt/tinyland-invitation',
+      role: AdminRole.CONTRIBUTOR,
+    });
 
     expect(result.admin.handle).toBe('jesssullivan');
     expect(result.admin.email).toBeUndefined();
@@ -16,9 +20,11 @@ describe('Tinyland databaseless auth MVP', () => {
     expect(result.backupCodes.accepted).toBe(true);
     expect(result.backupCodes.remaining).toBe(2);
 
-    expect(result.invitation.role).toBe('contributor');
-    expect(result.invitation.email).toBeUndefined();
-    expect(result.invitation.pendingAfterAccept).toBe(0);
+    expect(result.invitation).toEqual({
+      authority: '@tummycrypt/tinyland-invitation',
+      role: 'contributor',
+      email: undefined,
+    });
 
     expect(result.invitedUser.handle).toBe('trashmonitor');
     expect(result.invitedUser.email).toBeUndefined();

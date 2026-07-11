@@ -31,6 +31,16 @@ scope. It is not the current Tinyland publication authority for this repo.
 - `./cred-gen` — credential generation and display
 - `./validation` — input validation utilities
 
+## Invitation Authority
+
+`@tummycrypt/tinyland-auth` does not export an invitation service or factory.
+Use `@tummycrypt/tinyland-invitation` for fail-closed invitation authorization,
+minting, acceptance, revocation, and lifecycle management.
+
+The invitation record types and storage adapter methods in this package remain
+compatibility surfaces for persisting application state. They do not generate
+tokens or authorize a caller to mint an invitation.
+
 ## Storage Adapters
 
 Implement `IStorageAdapter` for your backend:

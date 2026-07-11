@@ -309,18 +309,6 @@ export {
 
 
 export {
-  InvitationService,
-  createInvitationService,
-  type InvitationServiceConfig,
-  type CreateInvitationOptions,
-  type CreateInvitationResult,
-} from './modules/invitation/index.js';
-
-
-
-
-
-export {
   BootstrapService,
   createBootstrapService,
   type BootstrapServiceConfig,

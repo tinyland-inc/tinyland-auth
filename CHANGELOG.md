@@ -1,5 +1,16 @@
 # @tummycrypt/tinyland-auth
 
+## Unreleased
+
+### Breaking Changes
+
+- Remove the duplicate `InvitationService` and `createInvitationService`
+  exports. Invitation minting and lifecycle authority now live exclusively in
+  `@tummycrypt/tinyland-invitation`, whose default role gate fails closed.
+  Existing invitation record types and storage adapter methods remain for
+  persistence compatibility. Consumers must migrate service imports before the
+  next release. (TIN-2780; authority ratified in TIN-1607.)
+
 ## 0.6.0
 
 ### Minor Changes

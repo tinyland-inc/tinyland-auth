@@ -53,6 +53,7 @@ vitest_bin.vitest_test(
         ".github/workflows/ci.yml",
         ".github/workflows/publish.yml",
         "BUILD.bazel",
+        "MODULE.bazel",
         "README.md",
         ":node_modules",
         ":node_modules/vitest",

@@ -2,7 +2,6 @@ import {
   AdminRole,
   createAuthConfig,
   createBackupCodeSet,
-  createInvitationService,
   createSessionManager,
   generateBackupCodes,
   hashPassword,
@@ -26,6 +25,12 @@ export interface ProviderIdentity {
   twoFactorVerifiedByProvider: boolean;
 }
 
+export interface AcceptedInvitationHandoff {
+  authority: '@tummycrypt/tinyland-invitation';
+  role: AdminRole;
+  email?: string;
+}
+
 export interface TinylandDatabaselessAuthMvpResult {
   admin: Pick<AdminUser, 'id' | 'handle' | 'email' | 'role' | 'totpEnabled'>;
   invitedUser: Pick<
@@ -41,9 +46,9 @@ export interface TinylandDatabaselessAuthMvpResult {
     remaining: number;
   };
   invitation: {
+    authority: '@tummycrypt/tinyland-invitation';
     role: AdminRole;
     email?: string;
-    pendingAfterAccept: number;
   };
   sessions: {
     passwordSessionValidWithoutFingerprint: boolean;
@@ -92,7 +97,9 @@ function handleOnlyUser(
   };
 }
 
-export async function runTinylandDatabaselessAuthMvp(): Promise<TinylandDatabaselessAuthMvpResult> {
+export async function runTinylandDatabaselessAuthMvp(
+  acceptedInvitation: AcceptedInvitationHandoff,
+): Promise<TinylandDatabaselessAuthMvpResult> {
   const defaults = createAuthConfig();
   const config = createAuthConfig({
     appName: 'Tinyland Auth MVP',
@@ -102,12 +109,6 @@ export async function runTinylandDatabaselessAuthMvp(): Promise<TinylandDatabase
       maxAge: 24 * 60 * 60 * 1000,
       renewThreshold: 60 * 60 * 1000,
       maxConcurrentSessions: 1,
-    },
-    invitation: {
-      ...defaults.invitation,
-      defaultExpiryHours: 24,
-      maxActiveInvitations: 5,
-      allowEmailOverride: false,
     },
   });
 
@@ -171,28 +172,6 @@ export async function runTinylandDatabaselessAuthMvp(): Promise<TinylandDatabase
     passwordSession.id,
   );
 
-  const invitationService = createInvitationService({
-    storage,
-    config: config.invitation,
-    baseUrl: config.appUrl,
-    totpIssuer: config.appName,
-  });
-
-  if (!invitationService.canInviteForRole(admin.role, AdminRole.CONTRIBUTOR)) {
-    throw new Error('MVP expected super_admin to invite a contributor');
-  }
-
-  const invitationResult = await invitationService.createInvitation({
-    role: AdminRole.CONTRIBUTOR,
-    createdBy: admin.id,
-    createdByHandle: admin.handle,
-    message: 'Handle-only invite for the Tinyland auth MVP',
-  });
-
-  if (!invitationResult.success || !invitationResult.invitation) {
-    throw new Error(invitationResult.error ?? 'MVP failed to create invite');
-  }
-
   const provider: ProviderIdentity = {
     provider: 'github',
     providerUserId: '424242',
@@ -203,20 +182,17 @@ export async function runTinylandDatabaselessAuthMvp(): Promise<TinylandDatabase
   const invitedDraft = handleOnlyUser({
     handle: provider.login,
     displayName: 'Trash Monitor',
-    role: invitationResult.invitation.role,
+    role: acceptedInvitation.role,
     githubId: Number(provider.providerUserId),
     githubLogin: provider.login,
     githubLinkedAt: nowIso(),
   });
+  invitedDraft.email = acceptedInvitation.email;
   invitedDraft.passwordHash = await hashPassword('invite accepted locally', {
     rounds: 4,
   });
 
   const invitedUser = await storage.createUser(invitedDraft);
-  await invitationService.markAsUsed(
-    invitationResult.invitation.token,
-    invitedUser.id,
-  );
 
   const providerSession = await sessionManager.createSession(
     invitedUser.id,
@@ -256,10 +232,9 @@ export async function runTinylandDatabaselessAuthMvp(): Promise<TinylandDatabase
       remaining: backupVerification.codesRemaining,
     },
     invitation: {
-      role: invitationResult.invitation.role,
-      email: invitationResult.invitation.email,
-      pendingAfterAccept: (await invitationService.listPendingInvitations())
-        .length,
+      authority: acceptedInvitation.authority,
+      role: acceptedInvitation.role,
+      email: acceptedInvitation.email,
     },
     sessions: {
       passwordSessionValidWithoutFingerprint: Boolean(
