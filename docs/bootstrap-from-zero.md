@@ -3,14 +3,15 @@
 This is the missing "from nothing" adoption guide for `@tummycrypt/tinyland-auth`.
 It takes a brand-new SvelteKit app and wires it up to a working house-native
 password plus TOTP login with a first `super_admin`, using only the public
-`0.6.0` API.
+`0.7.0` API.
 
-Everything below is grounded in the shipped `0.6.0` source. Each API is cited to
+Everything below is grounded in the reviewed `0.7.0` source. Each API is cited to
 its source file at the end (see "Provenance"). Where a snippet fills an
 integration seam that the package does not itself export, it is labelled
 `ILLUSTRATIVE` so you can tell verified package API from glue you supply.
 
-Pin `0.6.0`. This guide is written against that exact release.
+Pin `0.7.0` from the configured package authority. This guide is written
+against that exact release.
 
 ## What you get
 
@@ -318,7 +319,7 @@ a TOTP secret in their authenticator app, plus one-time backup codes.
 ## 7. Login route (password + replay-resistant TOTP)
 
 Login is two factors. Verify the password against the stored hash, then verify
-the TOTP code. In `0.6.0` prefer `verifyTokenWithStep`, which rejects replay of a
+the TOTP code. Since `0.6.0`, use `verifyTokenWithStep`, which rejects replay of a
 still-valid code by comparing the consumed time-step against the last one you
 persisted.
 
@@ -528,9 +529,9 @@ with no shell access.
 At that point an unauthenticated request to any non-public route redirects to
 `/login`, and a correct password plus TOTP code mints a session.
 
-## Provenance (0.6.0 source)
+## Provenance (0.7.0 source)
 
-Every API named above is a public export of `@tummycrypt/tinyland-auth@0.6.0`.
+Every API named above is a public export of `@tummycrypt/tinyland-auth@0.7.0`.
 Verified against the release source:
 
 - Root exports (`hashPassword`, `verifyPassword`, `validatePassword`,
@@ -573,4 +574,4 @@ Verified against the release source:
 Snippets labelled `ILLUSTRATIVE` fill integration seams (a deny-by-default hook,
 persisting `lastUsedTotpStep`, and a synchronous TOTP verifier for
 `BootstrapService`) that are app policy or supplied glue rather than package
-exports. Everything else is verified `0.6.0` API.
+exports. Everything else is verified `0.7.0` API.

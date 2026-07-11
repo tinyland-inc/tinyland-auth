@@ -52,6 +52,7 @@ describe('package release authority', () => {
 
       expect(workflow).toContain('runner_mode: repo_owned');
       expect(workflow).toContain('runner_labels_json: ${{ vars.PRIMARY_LINUX_RUNNER_LABELS_JSON }}');
+      expect(workflow).toContain('metadata_check_command: pnpm check:release-metadata');
       expect(workflow).toContain('unit_test_command: pnpm test && pnpm test:bazel');
       expect(workflow).toContain(
         'package_check_command: pnpm check:invitation-authority && pnpm check:package',
@@ -73,6 +74,21 @@ describe('package release authority', () => {
       'npx --yes @bazel/bazelisk test //:test //:typecheck --test_output=errors',
     );
     expect(bazelTestScript).not.toMatch(/@bazel\/bazelisk build\b/);
+  });
+
+  it('checks release metadata before package validation and publication', async () => {
+    const packageJson = JSON.parse(await readText('package.json')) as {
+      scripts?: Record<string, string>;
+    };
+    const guard = await readText('scripts/check-release-metadata.mjs');
+
+    expect(packageJson.scripts?.['check:release-metadata']).toBe(
+      'node scripts/check-release-metadata.mjs',
+    );
+    expect(guard).toContain("await readFile('MODULE.bazel', 'utf8')");
+    expect(guard).toContain("await readFile('BUILD.bazel', 'utf8')");
+    expect(guard).toContain("await readFile('CHANGELOG.md', 'utf8')");
+    expect(guard).toContain("process.env.GITHUB_REF_TYPE === 'tag'");
   });
 
   it('keeps the packaged version aligned with the MODULE.bazel SSOT', async () => {

@@ -26,6 +26,18 @@
   (`canManageRole`, `canInviteForRole`) and the `InvitationStorage` interface are
   unaffected.
 
+### Patch Changes
+
+- Migrate the TOTP compatibility layer to otplib v13's stateless functional
+  API while preserving the configured verification window and exact time-step
+  delta used by replay protection. Fresh secrets retain a 160-bit floor,
+  legacy sub-128-bit secrets fail closed with an explicit re-enrollment error,
+  and the unknown-user timing path uses a valid dummy secret.
+- Refresh bcryptjs, its type definitions, TypeScript, and Node type tooling.
+- Align the Bazel TypeScript toolchain with the pnpm lock and add a standing
+  release-metadata guard over package, module, package-rule, changelog, and tag
+  versions.
+
 ## 0.6.0
 
 ### Minor Changes
