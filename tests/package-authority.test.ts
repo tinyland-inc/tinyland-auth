@@ -52,10 +52,27 @@ describe('package release authority', () => {
 
       expect(workflow).toContain('runner_mode: repo_owned');
       expect(workflow).toContain('runner_labels_json: ${{ vars.PRIMARY_LINUX_RUNNER_LABELS_JSON }}');
+      expect(workflow).toContain('unit_test_command: pnpm test && pnpm test:bazel');
+      expect(workflow).toContain(
+        'package_check_command: pnpm check:invitation-authority && pnpm check:package',
+      );
       expect(workflow).toContain('bazel_targets: "//:pkg //:test //:typecheck"');
       expect(workflow).toContain('npm_publish_mode: disabled');
       expect(workflow).toContain('github_package_name: "@tinyland-inc/tinyland-auth"');
     }
+  });
+
+  it('executes the Bazel test target instead of only building it', async () => {
+    const packageJson = JSON.parse(await readText('package.json')) as {
+      scripts?: Record<string, string>;
+    };
+    const bazelTestScript = await readText('scripts/ci-bazel-test.sh');
+
+    expect(packageJson.scripts?.['test:bazel']).toBe('bash scripts/ci-bazel-test.sh');
+    expect(bazelTestScript).toContain(
+      'npx --yes @bazel/bazelisk test //:test //:typecheck --test_output=errors',
+    );
+    expect(bazelTestScript).not.toMatch(/@bazel\/bazelisk build\b/);
   });
 
   it('keeps the packaged version aligned with the MODULE.bazel SSOT', async () => {

@@ -32,9 +32,9 @@ jobs:
       publish_node_version: "22"
       pnpm_version: "10.13.1"
       typecheck_command: pnpm typecheck
-      unit_test_command: pnpm test
+      unit_test_command: pnpm test && pnpm test:bazel
       build_command: pnpm build
-      package_check_command: pnpm check:package
+      package_check_command: pnpm check:invitation-authority && pnpm check:package
       bazel_targets: "//:pkg //:test //:typecheck"
       package_dir: ./bazel-bin/pkg
       npm_access: public
