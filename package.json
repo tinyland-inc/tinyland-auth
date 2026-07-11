@@ -51,11 +51,13 @@
   ],
   "scripts": {
     "build": "tsc",
+    "check:invitation-authority": "node scripts/check-invitation-authority.mjs",
     "dev": "tsc --watch",
     "clean": "rm -rf dist",
     "check:package": "publint",
-    "prepublishOnly": "pnpm build && pnpm check:package",
+    "prepublishOnly": "pnpm build && pnpm check:invitation-authority && pnpm check:package",
     "test": "vitest run",
+    "test:bazel": "bash scripts/ci-bazel-test.sh",
     "test:coverage": "vitest --coverage",
     "typecheck": "tsc --noEmit"
   },
