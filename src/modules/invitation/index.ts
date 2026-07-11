@@ -45,6 +45,17 @@ export interface CreateInvitationResult {
   error?: string;
 }
 
+/**
+ * @internal
+ * @deprecated Not exported from the package public surface (TIN-2780).
+ *
+ * WARNING: `createInvitation` does NO role authorization — `options.role` flows
+ * straight into the minted invite. The authoritative, fail-closed invite flow is
+ * the standalone `@tummycrypt/tinyland-invitation` package (TIN-1607, tinyland.dev
+ * PR #649). Do not re-export this from `src/index.ts`. Any caller minting a
+ * role-bearing invite MUST gate with `canInviteForRole` / `canManageRole` first
+ * (see the databaseless example), or use the standalone package.
+ */
 export class InvitationService {
   private storage: InvitationStorage;
   private config: InvitationConfig;

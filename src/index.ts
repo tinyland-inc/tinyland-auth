@@ -304,18 +304,12 @@ export {
   type AuditLoggerConfig,
 } from './modules/audit/index.js';
 
-
-
-
-
-export {
-  InvitationService,
-  createInvitationService,
-  type InvitationServiceConfig,
-  type CreateInvitationOptions,
-  type CreateInvitationResult,
-} from './modules/invitation/index.js';
-
+// NOTE: InvitationService (src/modules/invitation) is intentionally NOT exported.
+// The authoritative, fail-closed invite flow is the standalone
+// @tummycrypt/tinyland-invitation package (TIN-1607 consolidation, tinyland.dev
+// PR #649). tinyland-auth's local InvitationService.createInvitation performs no
+// role authorization, so exporting it was a shelf-grab trap (TIN-2780). It is now
+// internal-only and unreachable via the package "exports" map.
 
 
 
