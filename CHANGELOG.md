@@ -1,5 +1,16 @@
 # @tummycrypt/tinyland-auth
 
+## 0.7.1
+
+### Patch Changes
+
+- Restore the Bazel module's shared `rules_ts` extension request to TypeScript
+  5.9.3. Version 0.7.0 requested 6.0.3 from a non-root module, which conflicts
+  with the rest of the first-party Bazel graph before a consumer can select its
+  own toolchain. The package still typechecks directly with TypeScript 6.0.3;
+  Bazel additionally proves source compatibility with the coordinated 5.9.3
+  toolchain until the graph migrates as one change.
+
 ## 0.7.0
 
 ### Major Changes

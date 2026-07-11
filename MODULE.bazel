@@ -1,6 +1,6 @@
 module(
     name = "tummycrypt_tinyland_auth",
-    version = "0.7.0",
+    version = "0.7.1",
     compatibility_level = 1,
 )
 
@@ -33,8 +33,7 @@ npm.npm_translate_lock(
 use_repo(npm, "tummycrypt_tinyland_auth_npm")
 
 rules_ts_ext = use_extension("@aspect_rules_ts//ts:extensions.bzl", "ext")
-rules_ts_ext.deps(
-    ts_integrity = "sha512-y2TvuxSZPDyQakkFRPZHKFm+KKVqIisdg9/CZwm9ftvKXLP8NRWj38/ODjNbr43SsoXqNuAisEf1GdCxqWcdBw==",
-    ts_version = "6.0.3",
-)
+# Keep the shared extension on the first-party graph's coordinated version.
+# The package's npm typecheck separately exercises TypeScript 6.0.3.
+rules_ts_ext.deps(ts_version = "5.9.3")
 use_repo(rules_ts_ext, "npm_typescript")
