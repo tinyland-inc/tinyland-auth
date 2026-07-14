@@ -1,5 +1,31 @@
 # @tummycrypt/tinyland-auth
 
+## Unreleased
+
+### Minor Changes
+
+- Add a tenant-scoped atomic first-user bootstrap storage contract for memory,
+  file, fixed-tenant, and external adapters. Inert claims carry no authority;
+  exact finalization replay is idempotent, mismatched replay conflicts, and an
+  immutable receipt remains separate from mutable user/TOTP/backup-code state.
+  Canonical claim/finalization/receipt helpers and a framework-neutral storage
+  conformance runner are public so external PG/Redis adapters can adopt and
+  prove the same security-sensitive validation and replay rules.
+- Harden user deletion so bootstrap actors cannot be removed and ordinary file
+  users are disabled and have sessions revoked before destructive writes.
+- Replace `BootstrapService`'s credential-bearing browser state and composed
+  writes with an opaque attempt reference, explicit server-side attempt
+  custody, finalized-metadata/decryptability status, encrypted-factor
+  round-trip validation, and the atomic storage finalization protocol. Attempt
+  custody now expires prepared state, rejects stale profile snapshots with a
+  digest CAS, and never
+  re-discloses pending credentials from receipt replay. A framework-neutral
+  attempt-store conformance runner makes those CAS rules reusable. Session
+  identity is immutable so an active claim cannot be bypassed by rebinding an
+  old session.
+  This is a breaking 0.8 contract; no 0.8 package is released by this source
+  change alone.
+
 ## 0.7.1
 
 ### Patch Changes

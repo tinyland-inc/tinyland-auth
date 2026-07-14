@@ -222,9 +222,10 @@ be resolved, so a misconfigured secret yields a login redirect, not a 500.
 ## 6. First super_admin bootstrap (operator seed script)
 
 This is the "from nothing" moment: the store has zero users and you need the
-first `super_admin`. The most direct, fully public-API path is a one-shot seed
-script the operator runs once. It mirrors the operations in the shipped
-`examples/tinyland-databaseless-auth-mvp.ts`.
+first `super_admin`. Use the storage-level claim/finalize protocol so no active
+user, credential, role, session authority, TOTP enrollment, or backup-code use
+exists before one atomic finalization. The immutable completion receipt makes
+an exact retry idempotent and rejects mismatched retries.
 
 ```ts
 // scripts/auth-seed.ts  (run with: node --env-file=.env scripts/auth-seed.ts)
@@ -232,7 +233,12 @@ import {
   hashPassword,
   generateBackupCodes,
   createBackupCodeSet,
+  type FirstUserBootstrapFinalization,
+  type InertFirstUserClaim,
 } from '@tummycrypt/tinyland-auth';
+import { randomUUID } from 'node:crypto';
+import { stdin, stdout } from 'node:process';
+import { createInterface } from 'node:readline/promises';
 import { AdminRole } from '@tummycrypt/tinyland-auth/types';
 import { createFileStorageAdapter } from '@tummycrypt/tinyland-auth/storage';
 import { TOTPService } from '@tummycrypt/tinyland-auth/totp';
@@ -250,55 +256,94 @@ async function main() {
   });
   await storage.init();
 
-  if (await storage.hasUsers()) {
-    throw new Error('Refusing to seed: users already exist');
-  }
-
   const totp = new TOTPService({ encryptionKey, issuer: 'My App' });
-
-  // 1. Create the super_admin user.
-  const now = new Date().toISOString();
-  const passwordHash = await hashPassword(PASSWORD, { rounds: 12 });
-  const user = await storage.createUser({
-    handle: HANDLE,
-    displayName: HANDLE,
-    passwordHash,
-    role: AdminRole.SUPER_ADMIN,
-    isActive: true,
-    totpEnabled: true,
-    needsOnboarding: false,
-    onboardingStep: 0,
-    createdAt: now,
-    updatedAt: now,
-  });
-
-  // 2. Generate + store the TOTP secret (encrypted at rest).
-  const secret = await totp.generateSecret(user.handle);
-  const enc = totp.encrypt(secret.secret);
-  await storage.saveTOTPSecret(user.handle, {
-    userId: user.id,
-    handle: user.handle,
-    encryptedSecret: enc.encrypted, // EncryptedData.encrypted -> encryptedSecret
-    iv: enc.iv,
-    authTag: enc.tag,             // EncryptedData.tag -> authTag
-    salt: enc.salt,
-    createdAt: now,
-    backupCodesGenerated: true,
+  const tenantId = process.env.AUTH_TENANT_ID;
+  if (!tenantId) throw new Error('AUTH_TENANT_ID required');
+  const claimedAt = new Date().toISOString();
+  const claim: InertFirstUserClaim = {
     version: 1,
-  });
+    tenantId,
+    attemptId: randomUUID(),
+    actor: {
+      id: randomUUID(),
+      handle: HANDLE,
+      isActive: false,
+      totpEnabled: false,
+      sessionAuthority: false,
+      backupCodesGenerated: false,
+    },
+    claimedAt,
+  };
+  await storage.claimFirstUserBootstrap(claim);
 
-  // 3. Generate + store backup codes. Print the plaintext once.
+  // Prepare all credential material without making any of it authoritative.
+  const passwordHash = await hashPassword(PASSWORD, { rounds: 12 });
+  const secret = await totp.generateSecret(claim.actor.handle);
+  const enc = totp.encrypt(secret.secret);
   const plainCodes = generateBackupCodes(10);
-  const codeSet = createBackupCodeSet(user.id, plainCodes);
-  await storage.saveBackupCodes(user.id, codeSet);
+  const finalizedAt = new Date().toISOString();
+  const finalization: FirstUserBootstrapFinalization = {
+    version: 1,
+    tenantId: claim.tenantId,
+    attemptId: claim.attemptId,
+    finalizedAt,
+    user: {
+      id: claim.actor.id,
+      handle: claim.actor.handle,
+      displayName: HANDLE,
+      passwordHash,
+      role: AdminRole.SUPER_ADMIN,
+      isActive: true,
+      totpEnabled: true,
+      totpSecretId: claim.actor.handle,
+      needsOnboarding: false,
+      onboardingStep: 0,
+      createdAt: claimedAt,
+      updatedAt: finalizedAt,
+    },
+    totpSecret: {
+      userId: claim.actor.id,
+      handle: claim.actor.handle,
+      encryptedSecret: enc.encrypted,
+      iv: enc.iv,
+      authTag: enc.tag,
+      salt: enc.salt,
+      createdAt: finalizedAt,
+      backupCodesGenerated: true,
+      version: 1,
+    },
+    backupCodes: {
+      ...createBackupCodeSet(claim.actor.id, plainCodes),
+      generatedAt: finalizedAt,
+    },
+  };
 
-  // 4. Show the operator what to scan / save. secret.qrCodeUrl is a data: URL.
-  console.log('super_admin created:', user.handle);
+  // Put the factor in the operator's authenticator and save the recovery
+  // codes before any credential or role becomes authoritative.
   console.log('Scan this TOTP secret in your authenticator app:');
   console.log('  otpauth secret:', secret.secret);
   console.log('  qr (data url):', secret.qrCodeUrl);
   console.log('Backup codes (store now, shown once):');
   for (const c of plainCodes) console.log('  ', c);
+
+  const prompt = createInterface({ input: stdin, output: stdout });
+  try {
+    const code = await prompt.question('Enter the current 6-digit TOTP code: ');
+    if (!(await totp.verifyToken(secret, code))) {
+      throw new Error('TOTP verification failed; no authority was finalized');
+    }
+    const confirmation = await prompt.question(
+      'Type COMMIT after storing the backup codes: ',
+    );
+    if (confirmation !== 'COMMIT') {
+      throw new Error('Bootstrap cancelled; no authority was finalized');
+    }
+  } finally {
+    prompt.close();
+  }
+
+  const receipt = await storage.finalizeFirstUserBootstrap(finalization);
+  console.log('super_admin created:', receipt.handle);
 }
 
 main().catch((err) => {
@@ -314,7 +359,12 @@ returns `EncryptedData` with `{ encrypted, salt, iv, tag }`, while the stored
 in the shipped example.
 
 After this runs once, the operator has a working `super_admin` with password and
-a TOTP secret in their authenticator app, plus one-time backup codes.
+a TOTP secret in their authenticator app, plus one-time backup codes. Keep the
+same finalization object for an exact retry within the running process;
+regenerating any field is a mismatched replay and fails closed. An unattended
+restart needs sealed durable custody for that exact finalization. This compact
+example intentionally makes no crash-restart claim; use the guided service with
+a durable attempt store for that workflow.
 
 ## 7. Login route (password + replay-resistant TOTP)
 
@@ -418,7 +468,8 @@ the authenticator, then persist the encrypted secret and flip `totpEnabled`.
 ```ts
 // generate + show (server load or action)
 const secret = await totp.generateSecret(user.handle); // secret.qrCodeUrl is a data: URL to render
-// keep secret.secret server-side (e.g. short-lived signed state) until verified
+// keep secret.secret in a short-lived server-side store until verified;
+// do not put it in a signed or encrypted browser cookie
 
 // verify the first code before saving
 const ok = await totp.verifyToken(
@@ -450,8 +501,16 @@ precondition, validates the handle, and its `complete()` step hardcodes
 `role: 'super_admin'`, so it is purpose-built for the first admin. Its config
 takes callbacks for the TOTP primitives:
 
+The unreleased 0.8 service uses the same atomic claim/finalize protocol. Its
+browser state is only an opaque attempt reference. All credential material and
+the compare-and-set prepared finalization stay in an explicit server-side
+`BootstrapAttemptStore`.
+
 ```ts
-import { createBootstrapService } from '@tummycrypt/tinyland-auth';
+import {
+  MemoryBootstrapAttemptStore,
+  createBootstrapService,
+} from '@tummycrypt/tinyland-auth';
 import {
   generateTOTPSecret,
   generateTOTPUri,
@@ -461,7 +520,10 @@ import { totp } from '$lib/server/auth.js';
 import { storage } from '$lib/server/storage.js';
 
 const bootstrap = createBootstrapService({
-  storage,                       // needs hasUsers/createUser/saveTOTPSecret/getTOTPSecret/saveBackupCodes/logAuditEvent
+  storage,                       // atomic bootstrap + status/audit reads
+  tenantId: process.env.AUTH_TENANT_ID!,
+  // Single-process only. Multi-replica apps must inject durable CAS custody.
+  attemptStore: new MemoryBootstrapAttemptStore(),
   appName: 'My App',
   bcryptRounds: 12,
   backupCodesCount: 10,
@@ -471,7 +533,7 @@ const bootstrap = createBootstrapService({
   encryptTOTPSecret: async (handle, secret) => {
     const enc = totp.encrypt(secret);
     return {
-      userId: 'pending',         // placeholder; record is keyed by handle (complete() does not backfill this)
+      userId: 'pending',         // service binds the stored factor to the claimed actor
       handle,
       encryptedSecret: enc.encrypted,
       iv: enc.iv,
@@ -482,6 +544,12 @@ const bootstrap = createBootstrapService({
       version: 1,
     };
   },
+  decryptTOTPSecret: async (stored) => totp.decrypt({
+    encrypted: stored.encryptedSecret,
+    salt: stored.salt,
+    iv: stored.iv,
+    tag: stored.authTag,
+  }),
   // verifyTOTP: (secret: string, token: string) => boolean
   // ILLUSTRATIVE seam: the package does not export a synchronous string-based
   // TOTP verifier, and this callback must be synchronous (complete() calls it
@@ -496,20 +564,34 @@ const bootstrap = createBootstrapService({
 });
 ```
 
-Flow: `getStatus()` tells you whether bootstrap is still allowed
-(`needsBootstrap`); `initiate({ handle, password, displayName, email? })` returns
-`{ state, qrCodeUrl, backupCodes }` (you carry `state` from `initiate` into
-`complete` yourself); `complete(state, { handle, totpCode })` verifies the
-code, writes the `super_admin`, stores backup codes, logs a
-`BOOTSTRAP_COMPLETED` audit event, and returns the safe user. The state expires
-10 minutes after `initiate`.
+Flow: `getStatus()` reports both first-user eligibility and whether finalized
+authority metadata is present with decryptable TOTP ciphertext. It is not a
+live authenticator-code canary. `initiate({ handle, password, displayName,
+email? })` returns
+`{ state, qrCodeUrl, backupCodes }`; `state` is `{ version: 1, attemptId }` and
+can be carried to `complete(state, { handle, totpCode })`. Profile updates use
+`await bootstrap.updateProfile(state, profile)` so profile data also stays in
+server custody. Completion verifies the code, freezes one deterministic
+finalization, commits the user/TOTP/backup-code authority atomically, and
+returns the safe user. Exact lost-response retries resolve from the immutable
+receipt before expiry or TOTP checks. Plaintext pending credentials are erased
+on the normal success path before the response returns. Receipt replay never
+re-emits backup codes, even if cleanup failed and left the pending record
+behind; save the one-time codes returned by `initiate`. Durable attempt stores
+must enforce expiry as a backstop for process crashes and cleanup failures.
 
-Protect `state` in transit. `BootstrapState` is a plain object that holds a raw
-(unencrypted) TOTP secret, the bcrypt password hash, and the plaintext backup
-codes. The package does not sign, encrypt, or serialize it for you. Do not
-round-trip it through the browser unprotected: keep it server-side, or if you
-must hand it to the client between `initiate` and `complete`, wrap it in a
-signed, httpOnly cookie (or equivalent) whose integrity you enforce yourself.
+`complete()` never returns backup codes, including its first success. The
+one-time disclosure is the `initiate()` response. The attempt and storage claim
+share one fixed ten-minute lifetime; shorter or longer service lifetimes are
+rejected so the browser-state and storage-authority windows cannot diverge.
+
+Protect the attempt id as a bearer capability in an httpOnly cookie or an
+equivalent server-bound transport. Never serialize the pending attempt object:
+it contains the password hash, raw TOTP secret, and plaintext backup codes. The
+attempt store must implement atomic create and prepare-finalization operations;
+an ordinary cache get/set pair is not sufficient for multiple replicas.
+The default attempt-id generator is cryptographically random. A custom
+`generateAttemptId` must preserve at least 128 bits of entropy.
 
 The seed script in section 6 is the lower-friction path for most apps; reach for
 `BootstrapService` when you want the whole thing to happen inside the running app
@@ -529,10 +611,12 @@ with no shell access.
 At that point an unauthenticated request to any non-public route redirects to
 `/login`, and a correct password plus TOTP code mints a session.
 
-## Provenance (0.7.1 source)
+## Provenance (0.7.1 release plus unreleased 0.8 bootstrap source)
 
-Every API named above is a public export of `@tummycrypt/tinyland-auth@0.7.1`.
-Verified against the release source:
+The general auth APIs below are public exports of
+`@tummycrypt/tinyland-auth@0.7.1`. The atomic first-user storage protocol,
+`MemoryBootstrapAttemptStore`, and opaque `BootstrapService` state are
+unreleased 0.8 source and must not be claimed as available from 0.7.1.
 
 - Root exports (`hashPassword`, `verifyPassword`, `validatePassword`,
   `generateBackupCodes`, `createBackupCodeSet`, `verifyBackupCode`,

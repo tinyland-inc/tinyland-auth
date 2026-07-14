@@ -16,6 +16,11 @@ import type {
   AdminInvitation,
   AuditEvent,
 } from '../types/auth.js';
+import type {
+  FirstUserBootstrapFinalization,
+  FirstUserBootstrapReceipt,
+  InertFirstUserClaim,
+} from './firstUserBootstrap.js';
 
 
 
@@ -23,6 +28,17 @@ import type {
 
 
 export interface IStorageAdapter {
+  claimFirstUserBootstrap(
+    claim: InertFirstUserClaim,
+  ): Promise<InertFirstUserClaim>;
+
+  finalizeFirstUserBootstrap(
+    finalization: FirstUserBootstrapFinalization,
+  ): Promise<FirstUserBootstrapReceipt>;
+
+  getFirstUserBootstrapReceipt(
+    tenantId: string,
+  ): Promise<FirstUserBootstrapReceipt | null>;
   
   
   
@@ -231,6 +247,13 @@ export interface IStorageAdapter {
   close(): Promise<void>;
 }
 
+export interface AtomicFirstUserBootstrapStorage extends Pick<
+  IStorageAdapter,
+  | 'claimFirstUserBootstrap'
+  | 'finalizeFirstUserBootstrap'
+  | 'getFirstUserBootstrapReceipt'
+> {}
+
 export interface AdminIdentityStorage extends Pick<
   IStorageAdapter,
   | 'getUser'
@@ -245,11 +268,13 @@ export interface AdminIdentityStorage extends Pick<
 
 export interface BootstrapStorage extends Pick<
   IStorageAdapter,
+  | 'claimFirstUserBootstrap'
+  | 'finalizeFirstUserBootstrap'
+  | 'getFirstUserBootstrapReceipt'
   | 'hasUsers'
-  | 'createUser'
+  | 'getUser'
   | 'getTOTPSecret'
-  | 'saveTOTPSecret'
-  | 'saveBackupCodes'
+  | 'getBackupCodes'
   | 'logAuditEvent'
 > {}
 

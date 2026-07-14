@@ -12,6 +12,9 @@ function makeStub(): TenantScopedStorage {
   return {
     init: vi.fn().mockResolvedValue(undefined),
     close: vi.fn().mockResolvedValue(undefined),
+    claimFirstUserBootstrap: vi.fn().mockImplementation(async (_t, claim) => claim),
+    finalizeFirstUserBootstrap: vi.fn().mockResolvedValue({} as never),
+    getFirstUserBootstrapReceipt: vi.fn().mockResolvedValue(null),
     getUser: vi.fn().mockResolvedValue(null),
     getUserByHandle: vi.fn().mockResolvedValue(null),
     getUserByEmail: vi.fn().mockResolvedValue(null),
@@ -168,5 +171,39 @@ describe("createFixedTenantStorageAdapter", () => {
     await adapter.deleteBackupCodes("u1");
     expect(stub.getTOTPSecret).toHaveBeenCalledWith(TENANT, "alice");
     expect(stub.deleteBackupCodes).toHaveBeenCalledWith(TENANT, "u1");
+  });
+
+  it("forwards atomic bootstrap operations to the tenant backend", async () => {
+    const stub = makeStub();
+    const adapter = createFixedTenantStorageAdapter(TENANT, stub);
+    const claim = {
+      version: 1,
+      tenantId: TENANT,
+      attemptId: "synthetic-attempt",
+      actor: {
+        id: "synthetic-user",
+        handle: "bootstrap_admin",
+        isActive: false,
+        totpEnabled: false,
+        sessionAuthority: false,
+        backupCodesGenerated: false,
+      },
+      claimedAt: new Date().toISOString(),
+    } as const;
+
+    await adapter.claimFirstUserBootstrap(claim);
+    await adapter.getFirstUserBootstrapReceipt(TENANT);
+
+    expect(stub.claimFirstUserBootstrap).toHaveBeenCalledWith(TENANT, claim);
+    expect(stub.getFirstUserBootstrapReceipt).toHaveBeenCalledWith(TENANT);
+  });
+
+  it("rejects bootstrap material for a different tenant", async () => {
+    const adapter = createFixedTenantStorageAdapter(TENANT, makeStub());
+    expect(() =>
+      adapter.getFirstUserBootstrapReceipt(
+        "87654321-4321-4321-8321-cba987654321",
+      ),
+    ).toThrow(/does not match fixed tenant/);
   });
 });

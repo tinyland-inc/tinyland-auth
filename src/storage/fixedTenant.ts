@@ -34,6 +34,11 @@ import type {
   SessionMetadata,
 } from "../types/index.js";
 import type { AuditEventFilters, IStorageAdapter } from "./interface.js";
+import type {
+  FirstUserBootstrapFinalization,
+  FirstUserBootstrapReceipt,
+  InertFirstUserClaim,
+} from "./firstUserBootstrap.js";
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -41,13 +46,31 @@ const UUID_RE =
 /**
  * Pattern B (multi-tenant) storage interface.
  *
- * Every method takes `tenantId` as its first parameter. Backends like
- * `@tummycrypt/tinyland-auth-pg` already implement this shape, so they
- * structurally satisfy this interface without explicit declaration.
+ * Every method takes `tenantId` as its first parameter. Existing PG/Redis
+ * adapters implement the legacy portion of this shape, but do not satisfy the
+ * unreleased 0.8 interface until their atomic bootstrap methods land and pass
+ * conformance.
  */
 export interface TenantScopedStorage {
   init(): Promise<void>;
   close(): Promise<void>;
+
+  /**
+   * These methods must be one backend-owned atomic protocol. A fixed-tenant
+   * wrapper only forwards them and cannot manufacture atomicity by composing
+   * ordinary user, factor, or backup-code writes.
+   */
+  claimFirstUserBootstrap(
+    tenantId: string,
+    claim: InertFirstUserClaim,
+  ): Promise<InertFirstUserClaim>;
+  finalizeFirstUserBootstrap(
+    tenantId: string,
+    finalization: FirstUserBootstrapFinalization,
+  ): Promise<FirstUserBootstrapReceipt>;
+  getFirstUserBootstrapReceipt(
+    tenantId: string,
+  ): Promise<FirstUserBootstrapReceipt | null>;
 
   getUser(tenantId: string, id: string): Promise<AdminUser | null>;
   getUserByHandle(tenantId: string, handle: string): Promise<AdminUser | null>;
@@ -187,6 +210,27 @@ class FixedTenantStorageAdapter implements IStorageAdapter {
     return this.storage.close();
   }
 
+  private assertRequestTenant(tenantId: string): void {
+    if (tenantId.toLowerCase() !== this.tenantId) {
+      throw new Error(
+        `bootstrap tenant ${tenantId} does not match fixed tenant ${this.tenantId}`,
+      );
+    }
+  }
+
+  claimFirstUserBootstrap(claim: InertFirstUserClaim) {
+    this.assertRequestTenant(claim.tenantId);
+    return this.storage.claimFirstUserBootstrap(this.tenantId, claim);
+  }
+  finalizeFirstUserBootstrap(finalization: FirstUserBootstrapFinalization) {
+    this.assertRequestTenant(finalization.tenantId);
+    return this.storage.finalizeFirstUserBootstrap(this.tenantId, finalization);
+  }
+  getFirstUserBootstrapReceipt(tenantId: string) {
+    this.assertRequestTenant(tenantId);
+    return this.storage.getFirstUserBootstrapReceipt(this.tenantId);
+  }
+
   getUser(id: string) {
     return this.storage.getUser(this.tenantId, id);
   }
@@ -306,6 +350,9 @@ class FixedTenantStorageAdapter implements IStorageAdapter {
  *
  * The returned adapter is a thin, stateless wrapper — every call delegates
  * to the underlying storage with `tenantId` injected as the first argument.
+ * The tenant-scoped backend itself must implement the atomic first-user
+ * bootstrap methods; this wrapper does not compose ordinary writes into an
+ * atomic transaction.
  */
 export function createFixedTenantStorageAdapter(
   tenantId: string,
