@@ -6,35 +6,7 @@ import { ROLE_HIERARCHY } from './auth.js';
 
 
 
-export type AdminPermission =
-  | 'admin.access'
-  | 'admin.users.view'
-  | 'admin.users.manage'
-  | 'admin.users.delete'
-  | 'admin.content.view'
-  | 'admin.content.publish'
-  | 'admin.content.media_create'
-  | 'admin.content.manage'
-  | 'admin.content.moderate'
-  | 'admin.content.delete'
-  | 'admin.events.view'
-  | 'admin.events.manage'
-  | 'admin.events.delete'
-  | 'admin.analytics.view'
-  | 'admin.analytics.export'
-  | 'admin.settings.view'
-  | 'admin.settings.manage'
-  | 'admin.security.view'
-  | 'admin.security.manage'
-  | 'admin.logs.view'
-  | 'admin.logs.export'
-  | 'admin.federation.view'
-  | 'admin.federation.deliver';
-
-
-
-
-export const PERMISSIONS = {
+export const PERMISSIONS = Object.freeze({
   ADMIN_ACCESS: 'admin.access',
   ADMIN_USERS_VIEW: 'admin.users.view',
   ADMIN_USERS_MANAGE: 'admin.users.manage',
@@ -58,7 +30,16 @@ export const PERMISSIONS = {
   ADMIN_LOGS_EXPORT: 'admin.logs.export',
   ADMIN_FEDERATION_VIEW: 'admin.federation.view',
   ADMIN_FEDERATION_DELIVER: 'admin.federation.deliver',
-} as const;
+} as const);
+
+export type AdminPermission = (typeof PERMISSIONS)[keyof typeof PERMISSIONS];
+
+function freezeRecordValues<T extends Record<string, object>>(record: T): T {
+  for (const value of Object.values(record)) {
+    Object.freeze(value);
+  }
+  return Object.freeze(record) as T;
+}
 
 // ROLE_PERMISSIONS is the single source of truth for role capabilities.
 // It is an INTENTIONAL LATTICE (operator-ratified, TIN-2435; precedent
@@ -66,7 +47,7 @@ export const PERMISSIONS = {
 // while capabilities are feature-scoped and do NOT nest by rank.
 // Invariant P2 (TIN-2435): every role ranked at or above `member` holds
 // MEMBER_SELF_SERVICE_CORE (the member row) as a floor.
-export const ROLE_PERMISSIONS: Record<AdminRole, string[]> = {
+export const ROLE_PERMISSIONS: Record<AdminRole, string[]> = freezeRecordValues({
   super_admin: Object.values(PERMISSIONS),
 
   admin: [
@@ -147,7 +128,7 @@ export const ROLE_PERMISSIONS: Record<AdminRole, string[]> = {
     PERMISSIONS.ADMIN_ACCESS,
     PERMISSIONS.ADMIN_ANALYTICS_VIEW,
   ],
-};
+});
 
 // MEMBER_SELF_SERVICE_CORE is defined AS the member row, by construction
 // (TIN-2435). Every role ranked at or above `member` in ROLE_HIERARCHY
@@ -162,7 +143,7 @@ export const MEMBER_SELF_SERVICE_CORE: readonly string[] = Object.freeze([
 // ratified under TIN-2435; `federation` is the ninth domain, deliberately
 // amended into the charter by the R2 ratification (TIN-2638, operator-
 // ratified 2026-07-07, bundled with the 0.5.0 cut).
-export const FEATURE_DOMAINS = [
+export const FEATURE_DOMAINS = Object.freeze([
   'access',
   'users',
   'content',
@@ -172,13 +153,13 @@ export const FEATURE_DOMAINS = [
   'security',
   'logs',
   'federation',
-] as const;
+] as const);
 
 export type FeatureDomain = (typeof FEATURE_DOMAINS)[number];
 
 // P3 registry (TIN-2435): every permission string that appears in
 // ROLE_PERMISSIONS must appear here, and vice versa.
-export const PERMISSION_FEATURE_DOMAIN: Record<AdminPermission, FeatureDomain> = {
+export const PERMISSION_FEATURE_DOMAIN: Record<AdminPermission, FeatureDomain> = Object.freeze({
   'admin.access': 'access',
   'admin.users.view': 'users',
   'admin.users.manage': 'users',
@@ -202,7 +183,7 @@ export const PERMISSION_FEATURE_DOMAIN: Record<AdminPermission, FeatureDomain> =
   'admin.logs.export': 'logs',
   'admin.federation.view': 'federation',
   'admin.federation.deliver': 'federation',
-};
+});
 
 // Two-axis role charter (operator-ratified 2026-07-04, TIN-2435).
 // Axis 1 (governance spine): viewer -> member -> moderator -> admin ->
@@ -218,7 +199,7 @@ export interface RoleCharterEntry {
   rank: number;
 }
 
-export const ROLE_CHARTER: Record<AdminRole, RoleCharterEntry> = {
+export const ROLE_CHARTER: Record<AdminRole, RoleCharterEntry> = freezeRecordValues({
   super_admin: { axis: 'governance-spine', rank: ROLE_HIERARCHY.super_admin },
   admin: { axis: 'governance-spine', rank: ROLE_HIERARCHY.admin },
   moderator: { axis: 'governance-spine', rank: ROLE_HIERARCHY.moderator },
@@ -227,7 +208,7 @@ export const ROLE_CHARTER: Record<AdminRole, RoleCharterEntry> = {
   contributor: { axis: 'specialist', rank: ROLE_HIERARCHY.contributor },
   member: { axis: 'governance-spine', rank: ROLE_HIERARCHY.member },
   viewer: { axis: 'governance-spine', rank: ROLE_HIERARCHY.viewer },
-};
+});
 
 
 

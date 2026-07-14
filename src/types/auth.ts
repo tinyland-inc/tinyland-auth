@@ -9,17 +9,7 @@
 
 
 
-export type AdminRole =
-  | 'super_admin'
-  | 'admin'
-  | 'moderator'
-  | 'editor'
-  | 'event_manager'
-  | 'contributor'
-  | 'member'
-  | 'viewer';
-
-export const ADMIN_ROLES = [
+export const ADMIN_ROLES = Object.freeze([
   'super_admin',
   'admin',
   'moderator',
@@ -28,12 +18,14 @@ export const ADMIN_ROLES = [
   'contributor',
   'member',
   'viewer',
-] as const satisfies readonly AdminRole[];
+] as const);
+
+export type AdminRole = (typeof ADMIN_ROLES)[number];
 
 
 
 
-export const AdminRole = {
+export const AdminRole = Object.freeze({
   SUPER_ADMIN: 'super_admin' as const,
   ADMIN: 'admin' as const,
   EDITOR: 'editor' as const,
@@ -42,13 +34,13 @@ export const AdminRole = {
   CONTRIBUTOR: 'contributor' as const,
   MEMBER: 'member' as const,
   VIEWER: 'viewer' as const,
-};
+});
 
 
 
 
 
-export const ROLE_HIERARCHY: Record<AdminRole, number> = {
+export const ROLE_HIERARCHY = Object.freeze({
   super_admin: 100,
   admin: 90,
   moderator: 70,
@@ -57,11 +49,11 @@ export const ROLE_HIERARCHY: Record<AdminRole, number> = {
   contributor: 40,
   member: 30,
   viewer: 10,
-};
+}) satisfies Readonly<Record<AdminRole, number>>;
 
-export const ROLE_MANAGEMENT_ORDER: readonly AdminRole[] = [
+export const ROLE_MANAGEMENT_ORDER: readonly AdminRole[] = Object.freeze([
   ...ADMIN_ROLES,
-].sort((left, right) => ROLE_HIERARCHY[right] - ROLE_HIERARCHY[left]);
+].sort((left, right) => ROLE_HIERARCHY[right] - ROLE_HIERARCHY[left]));
 
 
 
@@ -405,6 +397,7 @@ export function isAdminUser(obj: unknown): obj is AdminUser {
     typeof (obj as AdminUser).handle === 'string' &&
     typeof (obj as AdminUser).passwordHash === 'string' &&
     typeof (obj as AdminUser).role === 'string' &&
+    isValidAdminRole((obj as AdminUser).role) &&
     typeof (obj as AdminUser).isActive === 'boolean'
   );
 }
@@ -413,10 +406,26 @@ export function isValidAdminRole(role: string): role is AdminRole {
   return ADMIN_ROLES.includes(role as AdminRole);
 }
 
-export function hasHigherRole(userRole: AdminRole, targetRole: AdminRole): boolean {
-  return ROLE_HIERARCHY[userRole] > ROLE_HIERARCHY[targetRole];
+export function resolveCanonicalRole(
+  role: AdminRole | string,
+): AdminRole | null {
+  return typeof role === 'string' && isValidAdminRole(role) ? role : null;
 }
 
-export function hasEqualOrHigherRole(userRole: AdminRole, targetRole: AdminRole): boolean {
-  return ROLE_HIERARCHY[userRole] >= ROLE_HIERARCHY[targetRole];
+export function hasHigherRole(
+  userRole: AdminRole | string,
+  targetRole: AdminRole | string,
+): boolean {
+  const user = resolveCanonicalRole(userRole);
+  const target = resolveCanonicalRole(targetRole);
+  return Boolean(user && target && ROLE_HIERARCHY[user] > ROLE_HIERARCHY[target]);
+}
+
+export function hasEqualOrHigherRole(
+  userRole: AdminRole | string,
+  targetRole: AdminRole | string,
+): boolean {
+  const user = resolveCanonicalRole(userRole);
+  const target = resolveCanonicalRole(targetRole);
+  return Boolean(user && target && ROLE_HIERARCHY[user] >= ROLE_HIERARCHY[target]);
 }

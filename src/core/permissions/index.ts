@@ -7,7 +7,12 @@
 
 
 
-import { ROLE_HIERARCHY, isValidAdminRole, type AdminRole, type AdminUser } from '../../types/auth.js';
+import {
+  hasHigherRole,
+  resolveCanonicalRole,
+  type AdminRole,
+  type AdminUser,
+} from '../../types/auth.js';
 import { PERMISSIONS, ROLE_PERMISSIONS, type AdminPermission, type ContentVisibility } from '../../types/permissions.js';
 
 
@@ -18,21 +23,25 @@ import { PERMISSIONS, ROLE_PERMISSIONS, type AdminPermission, type ContentVisibi
 
 
 export function getRolePermissions(role: AdminRole | string): string[] {
-  const normalizedRole = role as AdminRole;
-  return ROLE_PERMISSIONS[normalizedRole] || [PERMISSIONS.ADMIN_ACCESS];
+  const normalizedRole = resolveCanonicalRole(role);
+  return normalizedRole ? [...ROLE_PERMISSIONS[normalizedRole]] : [];
 }
 
 
 
 
 export function hasPermission(user: AdminUser, permission: string): boolean {
-  if (user.role === 'super_admin') {
+  const role = resolveCanonicalRole(user.role);
+  if (!role) {
+    return false;
+  }
+  if (role === 'super_admin') {
     return true;
   }
   if (user.permissions?.includes(permission)) {
     return true;
   }
-  const rolePermissions = getRolePermissions(user.role);
+  const rolePermissions = getRolePermissions(role);
   return rolePermissions.includes(permission);
 }
 
@@ -47,7 +56,7 @@ export function hasAnyPermission(user: AdminUser, permissions: string[]): boolea
 
 
 export function hasAllPermissions(user: AdminUser, permissions: string[]): boolean {
-  return permissions.every(permission => hasPermission(user, permission));
+  return permissions.length > 0 && permissions.every(permission => hasPermission(user, permission));
 }
 
 
@@ -81,10 +90,14 @@ export function requireAllPermissions(user: AdminUser, permissions: string[]): v
 
 
 export function getUserPermissions(user: AdminUser): string[] {
-  if (user.role === 'super_admin') {
+  const role = resolveCanonicalRole(user.role);
+  if (!role) {
+    return [];
+  }
+  if (role === 'super_admin') {
     return Object.values(PERMISSIONS);
   }
-  const rolePerms = getRolePermissions(user.role);
+  const rolePerms = getRolePermissions(role);
   const userPerms = user.permissions || [];
   return [...new Set([...rolePerms, ...userPerms])];
 }
@@ -93,17 +106,7 @@ export function getUserPermissions(user: AdminUser): string[] {
 
 
 export function canManageRole(actorRole: AdminRole | string, targetRole: AdminRole | string): boolean {
-  const normalizedActor = normalizeRole(actorRole);
-  const normalizedTarget = normalizeRole(targetRole);
-
-  if (
-    !isValidAdminRole(normalizedActor) ||
-    !isValidAdminRole(normalizedTarget)
-  ) {
-    return false;
-  }
-
-  return ROLE_HIERARCHY[normalizedActor] > ROLE_HIERARCHY[normalizedTarget];
+  return hasHigherRole(actorRole, targetRole);
 }
 
 
@@ -156,12 +159,12 @@ export function getPermissionDisplayName(permission: string): string {
 // (TIN-2429, TIN-2435).
 
 function normalizeRole(role: AdminRole | string): string {
-  return String(role).toLowerCase().replace(/-/g, '_');
+  return resolveCanonicalRole(role) ?? '';
 }
 
 function roleHoldsPermission(role: AdminRole | string, permission: AdminPermission): boolean {
-  const normalized = normalizeRole(role);
-  if (!isValidAdminRole(normalized)) {
+  const normalized = resolveCanonicalRole(role);
+  if (!normalized) {
     return false;
   }
   return ROLE_PERMISSIONS[normalized].includes(permission);

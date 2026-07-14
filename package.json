@@ -24,6 +24,10 @@
       "types": "./dist/types/index.d.ts",
       "import": "./dist/types/index.js"
     },
+    "./rbac": {
+      "types": "./dist/rbac/index.d.ts",
+      "import": "./dist/rbac/index.js"
+    },
     "./totp": {
       "types": "./dist/totp/index.d.ts",
       "import": "./dist/totp/index.js"

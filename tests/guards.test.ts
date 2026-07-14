@@ -279,6 +279,15 @@ describe('requireRole', () => {
     expect(() => requireRole(locals, 'moderator')).not.toThrow();
     expect(() => requireRole(locals, 'viewer')).not.toThrow();
   });
+
+  it('should fail closed for an unknown session role', () => {
+    const session = createMockSession({
+      user: { id: 'user-1', username: 'owner', name: 'Owner', role: 'owner' },
+    });
+    const locals = createMockLocals({ session });
+
+    expect(() => requireRole(locals, 'viewer')).toThrow();
+  });
 });
 
 describe('adminGuard', () => {
@@ -361,6 +370,16 @@ describe('checkAuth', () => {
     expect(result.allowed).toBe(true);
   });
 
+  it('should deny an unknown session role', async () => {
+    const session = createMockSession({
+      user: { id: 'user-1', username: 'owner', name: 'Owner', role: 'owner' },
+    });
+    const locals = createMockLocals({ session });
+
+    const result = await checkAuth(locals, { requiredRole: 'viewer' });
+    expect(result.allowed).toBe(false);
+  });
+
   it('should use custom login URL', async () => {
     const locals = createMockLocals({ session: null });
 
@@ -418,6 +437,15 @@ describe('protectEndpoint', () => {
 
     const result = protectEndpoint(event, { requiredRole: 'admin' });
     expect(result.session).toBe(session);
+  });
+
+  it('should throw 403 for an unknown session role', () => {
+    const session = createMockSession({
+      user: { id: 'user-1', username: 'owner', name: 'Owner', role: 'owner' },
+    });
+    const event = createMockRequestEvent({ session });
+
+    expect(() => protectEndpoint(event, { requiredRole: 'viewer' })).toThrow();
   });
 });
 
