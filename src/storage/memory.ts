@@ -23,15 +23,16 @@ import type {
 } from '../types/auth.js';
 import {
   FirstUserBootstrapConflictError,
-  FirstUserBootstrapValidationError,
-  assertValidFirstUserBootstrapFinalization,
+  canonicalizeFirstUserBootstrapFinalization,
+  canonicalizeFirstUserBootstrapFinalizationPayload,
+  canonicalizeInertFirstUserClaim,
+  canonicalizeStructuralInertFirstUserClaim,
   cloneBootstrapValue,
   createFirstUserBootstrapReceipt,
   firstUserBootstrapMaterialDigest,
   firstUserBootstrapValueDigest,
   isExpiredInertFirstUserClaim,
-  isStructurallyValidInertFirstUserClaim,
-  isValidInertFirstUserClaim,
+  normalizeFirstUserBootstrapTenantId,
   type FirstUserBootstrapFinalization,
   type FirstUserBootstrapReceipt,
   type InertFirstUserClaim,
@@ -72,22 +73,18 @@ export class MemoryStorageAdapter implements IStorageAdapter {
   async claimFirstUserBootstrap(
     claim: InertFirstUserClaim,
   ): Promise<InertFirstUserClaim> {
-    if (!isStructurallyValidInertFirstUserClaim(claim)) {
-      throw new FirstUserBootstrapValidationError(
-        'First-user bootstrap claim must be inert',
-      );
-    }
-    if (this.firstUserReceipts.has(claim.tenantId)) {
+    const structuralClaim = canonicalizeStructuralInertFirstUserClaim(claim);
+    if (this.firstUserReceipts.has(structuralClaim.tenantId)) {
       throw new FirstUserBootstrapConflictError(
         'First-user bootstrap is already finalized for this tenant',
       );
     }
 
-    const existing = this.firstUserClaims.get(claim.tenantId);
+    const existing = this.firstUserClaims.get(structuralClaim.tenantId);
     if (existing) {
       if (
         firstUserBootstrapValueDigest(existing) ===
-        firstUserBootstrapValueDigest(claim)
+        firstUserBootstrapValueDigest(structuralClaim)
       ) {
         return cloneBootstrapValue(existing);
       }
@@ -96,14 +93,9 @@ export class MemoryStorageAdapter implements IStorageAdapter {
           'A different first-user bootstrap claim already exists for this tenant',
         );
       }
-      this.firstUserClaims.delete(claim.tenantId);
     }
-    if (!isValidInertFirstUserClaim(claim)) {
-      throw new FirstUserBootstrapValidationError(
-        'Replacement first-user bootstrap claim must be fresh and inert',
-      );
-    }
-    if (this.firstUserClaims.size > 0) {
+    const canonicalClaim = canonicalizeInertFirstUserClaim(structuralClaim);
+    if (this.firstUserClaims.size > (existing ? 1 : 0)) {
       throw new FirstUserBootstrapConflictError(
         'This memory storage instance already belongs to another bootstrap tenant',
       );
@@ -115,30 +107,43 @@ export class MemoryStorageAdapter implements IStorageAdapter {
     }
     if (
       Array.from(this.sessions.values()).some(
-        (session) => session.userId === claim.actor.id,
+        (session) => session.userId === canonicalClaim.actor.id,
       ) ||
-      this.totpSecrets.has(claim.actor.handle.toLowerCase()) ||
-      this.backupCodes.has(claim.actor.id)
+      this.totpSecrets.has(canonicalClaim.actor.handle.toLowerCase()) ||
+      this.backupCodes.has(canonicalClaim.actor.id)
     ) {
       throw new FirstUserBootstrapConflictError(
         'Claimed actor already has session or factor state',
       );
     }
 
-    const stored = cloneBootstrapValue(claim);
-    this.firstUserClaims.set(claim.tenantId, stored);
+    const stored = cloneBootstrapValue(canonicalClaim);
+    this.firstUserClaims.set(canonicalClaim.tenantId, stored);
     return cloneBootstrapValue(stored);
   }
 
   async finalizeFirstUserBootstrap(
     finalization: FirstUserBootstrapFinalization,
   ): Promise<FirstUserBootstrapReceipt> {
-    const existingReceipt = this.firstUserReceipts.get(finalization.tenantId);
+    const payload = canonicalizeFirstUserBootstrapFinalizationPayload(finalization);
+    const existingReceipt = this.firstUserReceipts.get(payload.tenantId);
     if (existingReceipt) {
+      const existingClaim = this.firstUserClaims.get(payload.tenantId);
+      const existingMaterial = this.firstUserFinalizations.get(payload.tenantId);
+      if (!existingClaim || !existingMaterial) {
+        throw new FirstUserBootstrapConflictError(
+          'Bootstrap completion state is internally inconsistent',
+        );
+      }
+      const canonicalReplay = canonicalizeFirstUserBootstrapFinalization(
+        existingClaim,
+        payload,
+        Date.parse(existingMaterial.finalizedAt),
+      );
       if (
-        existingReceipt.attemptId === finalization.attemptId &&
+        existingReceipt.attemptId === canonicalReplay.attemptId &&
         existingReceipt.materialDigest ===
-          firstUserBootstrapMaterialDigest(finalization)
+          firstUserBootstrapMaterialDigest(canonicalReplay)
       ) {
         return cloneBootstrapValue(existingReceipt);
       }
@@ -147,20 +152,19 @@ export class MemoryStorageAdapter implements IStorageAdapter {
       );
     }
 
-    const claim = this.firstUserClaims.get(finalization.tenantId);
+    const claim = this.firstUserClaims.get(payload.tenantId);
     if (!claim) {
       throw new FirstUserBootstrapConflictError(
         'No active first-user bootstrap claim exists for this tenant',
       );
     }
-    assertValidFirstUserBootstrapFinalization(claim, finalization);
+    const material = canonicalizeFirstUserBootstrapFinalization(claim, payload);
     if (this.users.size > 0) {
       throw new FirstUserBootstrapConflictError(
         'First-user bootstrap requires an empty user store',
       );
     }
 
-    const material = cloneBootstrapValue(finalization);
     const receipt = createFirstUserBootstrapReceipt(claim, material);
     this.users.set(material.user.id, cloneBootstrapValue(material.user));
     this.usersByHandle.set(material.user.handle.toLowerCase(), material.user.id);
@@ -183,7 +187,9 @@ export class MemoryStorageAdapter implements IStorageAdapter {
   async getFirstUserBootstrapReceipt(
     tenantId: string,
   ): Promise<FirstUserBootstrapReceipt | null> {
-    const receipt = this.firstUserReceipts.get(tenantId);
+    const receipt = this.firstUserReceipts.get(
+      normalizeFirstUserBootstrapTenantId(tenantId),
+    );
     return receipt ? cloneBootstrapValue(receipt) : null;
   }
 

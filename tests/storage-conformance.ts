@@ -2,7 +2,9 @@ import { createHash } from 'crypto';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { IStorageAdapter } from '../src/storage/interface.js';
 import {
+  FIRST_USER_BOOTSTRAP_CLAIM_MAX_AGE_MS,
   FirstUserBootstrapConflictError,
+  firstUserBootstrapValueDigest,
   isValidInertFirstUserClaim,
   type FirstUserBootstrapFinalization,
   type InertFirstUserClaim,
@@ -16,7 +18,9 @@ export interface StorageConformanceHarness {
   cleanup(): Promise<void>;
 }
 
-export type StorageConformanceFactory = () => Promise<StorageConformanceHarness>;
+export type StorageConformanceFactory = (
+  tenantId: string,
+) => Promise<StorageConformanceHarness>;
 
 function syntheticHash(label: string): string {
   return createHash('sha256').update(`synthetic-${label}`).digest('hex');
@@ -104,7 +108,7 @@ export function describeStorageConformance(
     let storage: IStorageAdapter;
 
     beforeEach(async () => {
-      harness = await createHarness();
+      harness = await createHarness(TENANT);
       storage = harness.storage;
       await storage.init();
     });
@@ -138,13 +142,67 @@ export function describeStorageConformance(
       const active = makeClaim();
       (active.actor as { isActive: boolean }).isActive = true;
       expect(isValidInertFirstUserClaim(active)).toBe(false);
-      await expect(storage.claimFirstUserBootstrap(active)).rejects.toThrow(/inert/);
+      await expect(storage.claimFirstUserBootstrap(active)).rejects.toThrow();
 
       const credentialed = makeClaim();
       (credentialed.actor as unknown as { passwordHash: string }).passwordHash =
         SYNTHETIC_BCRYPT_HASH;
       expect(isValidInertFirstUserClaim(credentialed)).toBe(false);
-      await expect(storage.claimFirstUserBootstrap(credentialed)).rejects.toThrow(/inert/);
+      await expect(storage.claimFirstUserBootstrap(credentialed)).rejects.toThrow();
+    });
+
+    it('rejects unknown, missing, and non-JSON claim fields before mutation', async () => {
+      const malformed: InertFirstUserClaim[] = [];
+      const unknown = makeClaim() as InertFirstUserClaim & { credential?: string };
+      unknown.credential = 'alias';
+      malformed.push(unknown);
+      const missing = makeClaim() as InertFirstUserClaim & { claimedAt?: string };
+      delete missing.claimedAt;
+      malformed.push(missing as InertFirstUserClaim);
+      const undefinedField = makeClaim() as InertFirstUserClaim & { note?: undefined };
+      undefinedField.note = undefined;
+      malformed.push(undefinedField);
+
+      for (const claim of malformed) {
+        await expect(storage.claimFirstUserBootstrap(claim)).rejects.toThrow();
+      }
+      await expect(storage.claimFirstUserBootstrap(makeClaim())).resolves.toMatchObject({
+        tenantId: TENANT,
+      });
+      expect(await storage.hasUsers()).toBe(false);
+    });
+
+    it('uses an injective canonical JSON digest and rejects lossy values', () => {
+      expect(firstUserBootstrapValueDigest({ value: 0 })).not.toBe(
+        firstUserBootstrapValueDigest({ value: null }),
+      );
+      const sparse = new Array(1);
+      const accessor = Object.defineProperty({}, 'value', {
+        enumerable: true,
+        get: () => 'not-data',
+      });
+      const symbolKey = { value: 'visible' } as Record<PropertyKey, unknown>;
+      symbolKey[Symbol('hidden')] = 'not-json';
+      const cycle: Record<string, unknown> = {};
+      cycle.self = cycle;
+      for (const value of [
+        undefined,
+        Number.NaN,
+        Number.POSITIVE_INFINITY,
+        Number.NEGATIVE_INFINITY,
+        -0,
+        () => undefined,
+        Symbol('non-json'),
+        1n,
+        sparse,
+        new Date(),
+        new Map([['value', 'not-json']]),
+        accessor,
+        symbolKey,
+        cycle,
+      ]) {
+        expect(() => firstUserBootstrapValueDigest(value)).toThrow();
+      }
     });
 
     it('keeps a successful claim inert until finalization', async () => {
@@ -203,13 +261,36 @@ export function describeStorageConformance(
         );
         await expect(
           storage.finalizeFirstUserBootstrap(makeFinalization(original)),
-        ).rejects.toThrow(/does not match|active claim/i);
+        ).rejects.toThrow(/does not match|active claim|claim lifetime/i);
       } finally {
         vi.useRealTimers();
       }
     });
 
-    it('rejects backdated finalization after the server-side claim window', async () => {
+    it('accepts finalization at the exact 600000 ms claim boundary', async () => {
+      const startedAt = Date.now();
+      vi.useFakeTimers();
+      try {
+        expect(FIRST_USER_BOOTSTRAP_CLAIM_MAX_AGE_MS).toBe(600_000);
+        vi.setSystemTime(startedAt);
+        const claim = makeClaim({
+          claimedAt: new Date(startedAt).toISOString(),
+        });
+        await storage.claimFirstUserBootstrap(claim);
+
+        vi.setSystemTime(startedAt + 600_000);
+        await expect(
+          storage.finalizeFirstUserBootstrap(makeFinalization(claim)),
+        ).resolves.toMatchObject({
+          tenantId: TENANT,
+          attemptId: claim.attemptId,
+        });
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('rejects finalization at 600001 ms without clock-skew grace', async () => {
       const startedAt = Date.now();
       vi.useFakeTimers();
       try {
@@ -217,10 +298,11 @@ export function describeStorageConformance(
         const claim = makeClaim({
           claimedAt: new Date(startedAt).toISOString(),
         });
-        const finalization = makeFinalization(claim);
         await storage.claimFirstUserBootstrap(claim);
 
-        vi.setSystemTime(startedAt + 12 * 60 * 1000);
+        vi.setSystemTime(startedAt + 600_000);
+        const finalization = makeFinalization(claim);
+        vi.setSystemTime(startedAt + 600_001);
         await expect(
           storage.finalizeFirstUserBootstrap(finalization),
         ).rejects.toThrow(/outside the active claim window/i);
@@ -228,6 +310,19 @@ export function describeStorageConformance(
       } finally {
         vi.useRealTimers();
       }
+    });
+
+    it('rejects a forged year-2000 claim timestamp before finalization', async () => {
+      const claim = makeClaim();
+      const finalization = makeFinalization(claim);
+      finalization.user.createdAt = '2000-01-01T00:00:00.000Z';
+      await storage.claimFirstUserBootstrap(claim);
+
+      await expect(
+        storage.finalizeFirstUserBootstrap(finalization),
+      ).rejects.toThrow(/claim lifetime|claim timestamp/i);
+      expect(await storage.hasUsers()).toBe(false);
+      expect(await storage.getFirstUserBootstrapReceipt(TENANT)).toBeNull();
     });
 
     it('returns the immutable receipt for an exact finalization replay', async () => {
@@ -272,6 +367,26 @@ export function describeStorageConformance(
       await expect(storage.finalizeFirstUserBootstrap(mismatch)).rejects.toThrow(
         /immutable completion receipt/,
       );
+    });
+
+    it('validates a completed replay before digest comparison', async () => {
+      const claim = makeClaim();
+      const finalization = makeFinalization(claim);
+      await storage.claimFirstUserBootstrap(claim);
+      const receipt = await storage.finalizeFirstUserBootstrap(finalization);
+
+      const invalidReplay = structuredClone(finalization);
+      invalidReplay.user.onboardingStep = -0;
+      await expect(storage.finalizeFirstUserBootstrap(invalidReplay)).rejects.toThrow();
+
+      const sparseReplay = structuredClone(finalization);
+      sparseReplay.backupCodes.codes = new Array(2);
+      await expect(storage.finalizeFirstUserBootstrap(sparseReplay)).rejects.toThrow();
+
+      const undefinedReplay = structuredClone(finalization);
+      undefinedReplay.user.email = undefined;
+      await expect(storage.finalizeFirstUserBootstrap(undefinedReplay)).rejects.toThrow();
+      expect(await storage.getFirstUserBootstrapReceipt(TENANT)).toEqual(receipt);
     });
 
     it('does not change the receipt when mutable current state changes', async () => {
@@ -364,6 +479,23 @@ export function describeStorageConformance(
     it('rejects invalid bcrypt, factor-use, backup uniqueness, and timestamps', async () => {
       const invalidCases: Array<(value: FirstUserBootstrapFinalization) => void> = [
         (value) => { value.user.passwordHash = '$2b$04$not-a-bcrypt-hash'; },
+        (value) => { value.user.role = 'viewer'; },
+        (value) => {
+          Reflect.deleteProperty(
+            value.user as unknown as Record<string, unknown>,
+            'needsOnboarding',
+          );
+        },
+        (value) => { value.user.email = undefined; },
+        (value) => { value.user.email = 'ADMIN@TEST.COM'; },
+        (value) => { value.user.isLocked = true; },
+        (value) => { value.user.loginAttempts = 1; },
+        (value) => { value.user.permissions = ['z:last', 'a:first']; },
+        (value) => { value.user.onboardingStep = -0; },
+        (value) => {
+          (value.user as unknown as Record<string, unknown>).displayName =
+            () => undefined;
+        },
         (value) => { value.totpSecret.lastUsedTotpStep = 1; },
         (value) => { value.backupCodes.codes[1].hash = value.backupCodes.codes[0].hash; },
         (value) => {
@@ -374,7 +506,7 @@ export function describeStorageConformance(
       ];
 
       for (const mutate of invalidCases) {
-        const isolated = await createHarness();
+        const isolated = await createHarness(TENANT);
         await isolated.storage.init();
         try {
           const claim = makeClaim();
@@ -385,6 +517,12 @@ export function describeStorageConformance(
             isolated.storage.finalizeFirstUserBootstrap(finalization),
           ).rejects.toThrow();
           expect(await isolated.storage.hasUsers()).toBe(false);
+          expect(await isolated.storage.getUser(claim.actor.id)).toBeNull();
+          expect(await isolated.storage.getTOTPSecret(claim.actor.handle)).toBeNull();
+          expect(await isolated.storage.getBackupCodes(claim.actor.id)).toBeNull();
+          expect(
+            await isolated.storage.getFirstUserBootstrapReceipt(claim.tenantId),
+          ).toBeNull();
         } finally {
           await isolated.storage.close();
           await isolated.cleanup();

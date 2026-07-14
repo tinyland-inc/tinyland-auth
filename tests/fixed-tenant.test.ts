@@ -4,17 +4,35 @@ import {
   resolveAuthTenantId,
   type TenantScopedStorage,
 } from "../src/storage/fixedTenant.js";
+import { createFirstUserBootstrapReceipt } from "../src/storage/firstUserBootstrap.js";
 import type { AdminUser } from "../src/types/index.js";
+import { makeClaim, makeFinalization } from "./storage-conformance.js";
 
 const TENANT = "12345678-1234-4123-8123-123456789abc";
+const OTHER_TENANT = "87654321-4321-4321-8321-cba987654321";
 
 function makeStub(): TenantScopedStorage {
+  const claims = new Map<string, ReturnType<typeof makeClaim>>();
+  const receipts = new Map<
+    string,
+    ReturnType<typeof createFirstUserBootstrapReceipt>
+  >();
   return {
     init: vi.fn().mockResolvedValue(undefined),
     close: vi.fn().mockResolvedValue(undefined),
-    claimFirstUserBootstrap: vi.fn().mockImplementation(async (_t, claim) => claim),
-    finalizeFirstUserBootstrap: vi.fn().mockResolvedValue({} as never),
-    getFirstUserBootstrapReceipt: vi.fn().mockResolvedValue(null),
+    claimFirstUserBootstrap: vi.fn().mockImplementation(async (tenantId, claim) => {
+      claims.set(tenantId, claim);
+      return claim;
+    }),
+    finalizeFirstUserBootstrap: vi.fn().mockImplementation(async (tenantId, finalization) => {
+      const claim = claims.get(tenantId);
+      if (!claim) throw new Error("missing synthetic claim");
+      const receipt = createFirstUserBootstrapReceipt(claim, finalization);
+      receipts.set(tenantId, receipt);
+      return receipt;
+    }),
+    getFirstUserBootstrapReceipt: vi.fn().mockImplementation(async (tenantId) =>
+      receipts.get(tenantId) ?? null),
     getUser: vi.fn().mockResolvedValue(null),
     getUserByHandle: vi.fn().mockResolvedValue(null),
     getUserByEmail: vi.fn().mockResolvedValue(null),
@@ -173,36 +191,144 @@ describe("createFixedTenantStorageAdapter", () => {
     expect(stub.deleteBackupCodes).toHaveBeenCalledWith(TENANT, "u1");
   });
 
-  it("forwards atomic bootstrap operations to the tenant backend", async () => {
+  it("forwards normalized bootstrap tenants in arguments and payloads", async () => {
     const stub = makeStub();
     const adapter = createFixedTenantStorageAdapter(TENANT, stub);
-    const claim = {
-      version: 1,
-      tenantId: TENANT,
-      attemptId: "synthetic-attempt",
-      actor: {
-        id: "synthetic-user",
-        handle: "bootstrap_admin",
-        isActive: false,
-        totpEnabled: false,
-        sessionAuthority: false,
-        backupCodesGenerated: false,
-      },
-      claimedAt: new Date().toISOString(),
-    } as const;
+    const claim = makeClaim({ tenantId: TENANT.toUpperCase() });
+    const finalization = makeFinalization(claim);
+    (finalization.user as AdminUser & { tenantId?: string }).tenantId =
+      TENANT.toUpperCase();
 
     await adapter.claimFirstUserBootstrap(claim);
-    await adapter.getFirstUserBootstrapReceipt(TENANT);
+    await adapter.finalizeFirstUserBootstrap(finalization);
+    await adapter.getFirstUserBootstrapReceipt(TENANT.toUpperCase());
 
-    expect(stub.claimFirstUserBootstrap).toHaveBeenCalledWith(TENANT, claim);
+    expect(stub.claimFirstUserBootstrap).toHaveBeenCalledWith(
+      TENANT,
+      expect.objectContaining({ tenantId: TENANT }),
+    );
+    expect(stub.finalizeFirstUserBootstrap).toHaveBeenCalledWith(
+      TENANT,
+      expect.objectContaining({
+        tenantId: TENANT,
+        user: expect.objectContaining({ tenantId: TENANT }),
+      }),
+    );
     expect(stub.getFirstUserBootstrapReceipt).toHaveBeenCalledWith(TENANT);
   });
 
+  it("accepts claimedAt at 600000 ms and rejects 600001 ms before forwarding", async () => {
+    const now = Date.parse("2026-07-14T12:00:00.000Z");
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(now);
+      const stub = makeStub();
+      const adapter = createFixedTenantStorageAdapter(TENANT, stub);
+      const boundary = makeClaim({
+        claimedAt: new Date(now - 600_000).toISOString(),
+      });
+      await expect(adapter.claimFirstUserBootstrap(boundary)).resolves.toEqual(
+        boundary,
+      );
+
+      vi.mocked(stub.claimFirstUserBootstrap).mockClear();
+      const expired = makeClaim({
+        attemptId: "expired-attempt",
+        claimedAt: new Date(now - 600_001).toISOString(),
+      });
+      expect(() => adapter.claimFirstUserBootstrap(expired)).toThrow(
+        /active claim window/i,
+      );
+      expect(stub.claimFirstUserBootstrap).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("rejects malformed, wrong-tenant, and wrong-claim adapter returns", async () => {
+    const claim = makeClaim();
+    const returnedClaims: unknown[] = [
+      {},
+      { ...claim, tenantId: OTHER_TENANT },
+      { ...claim, attemptId: "different-attempt" },
+      {
+        ...claim,
+        claimedAt: new Date(Date.parse(claim.claimedAt) + 1).toISOString(),
+      },
+    ];
+
+    for (const returned of returnedClaims) {
+      const stub = makeStub();
+      vi.mocked(stub.claimFirstUserBootstrap).mockResolvedValue(returned as never);
+      const adapter = createFixedTenantStorageAdapter(TENANT, stub);
+      await expect(adapter.claimFirstUserBootstrap(claim)).rejects.toThrow();
+    }
+  });
+
+  it("rejects malformed or mismatched finalization receipts from the backend", async () => {
+    const claim = makeClaim();
+    const finalization = makeFinalization(claim);
+    const validReceipt = createFirstUserBootstrapReceipt(claim, finalization);
+    const returnedReceipts: unknown[] = [
+      {},
+      { ...validReceipt, tenantId: OTHER_TENANT },
+      { ...validReceipt, claimedAt: "2000-01-01T00:00:00.000Z" },
+      { ...validReceipt, materialDigest: "0".repeat(64) },
+    ];
+
+    for (const returned of returnedReceipts) {
+      const stub = makeStub();
+      const adapter = createFixedTenantStorageAdapter(TENANT, stub);
+      await adapter.claimFirstUserBootstrap(claim);
+      vi.mocked(stub.finalizeFirstUserBootstrap).mockResolvedValue(returned as never);
+      await expect(adapter.finalizeFirstUserBootstrap(finalization)).rejects.toThrow();
+    }
+  });
+
+  it("rejects a forged claim timestamp before forwarding finalization", async () => {
+    const stub = makeStub();
+    const adapter = createFixedTenantStorageAdapter(TENANT, stub);
+    const claim = makeClaim();
+    const finalization = makeFinalization(claim);
+    finalization.user.createdAt = "2000-01-01T00:00:00.000Z";
+    vi.mocked(stub.finalizeFirstUserBootstrap).mockClear();
+
+    expect(() => adapter.finalizeFirstUserBootstrap(finalization)).toThrow(
+      /claim lifetime/i,
+    );
+    expect(stub.finalizeFirstUserBootstrap).not.toHaveBeenCalled();
+  });
+
+  it("rejects wrong-tenant and forged-time stored receipts", async () => {
+    const claim = makeClaim();
+    const finalization = makeFinalization(claim);
+    const receipt = createFirstUserBootstrapReceipt(claim, finalization);
+    for (const returned of [
+      { ...receipt, tenantId: OTHER_TENANT },
+      { ...receipt, claimedAt: "2000-01-01T00:00:00.000Z" },
+    ]) {
+      const stub = makeStub();
+      const adapter = createFixedTenantStorageAdapter(TENANT, stub);
+      vi.mocked(stub.getFirstUserBootstrapReceipt).mockResolvedValue(returned);
+      await expect(adapter.getFirstUserBootstrapReceipt(TENANT)).rejects.toThrow();
+    }
+  });
+
   it("rejects bootstrap material for a different tenant", async () => {
-    const adapter = createFixedTenantStorageAdapter(TENANT, makeStub());
+    const stub = makeStub();
+    const adapter = createFixedTenantStorageAdapter(TENANT, stub);
+    const claim = makeClaim();
+    const finalization = makeFinalization(claim);
+    (finalization.user as AdminUser & { tenantId?: string }).tenantId =
+      OTHER_TENANT;
+
+    expect(() => adapter.finalizeFirstUserBootstrap(finalization)).toThrow(
+      /does not match fixed tenant/,
+    );
+    expect(stub.finalizeFirstUserBootstrap).not.toHaveBeenCalled();
     expect(() =>
       adapter.getFirstUserBootstrapReceipt(
-        "87654321-4321-4321-8321-cba987654321",
+        OTHER_TENANT,
       ),
     ).toThrow(/does not match fixed tenant/);
   });

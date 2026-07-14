@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   BootstrapService,
   MemoryBootstrapAttemptStore,
@@ -118,6 +118,25 @@ describe('BootstrapService atomic first-user flow', () => {
       hasUsers: false,
       systemConfigured: false,
     });
+  });
+
+  it('canonicalizes optional profile strings before attempt custody', async () => {
+    const result = await service.initiate({
+      handle: 'admin',
+      password: 'SecurePassword123!',
+      displayName: '  Admin User  ',
+      email: '  ADMIN@TEST.COM  ',
+    });
+    const pending = await attemptStore.get(TENANT_ID, result.state.attemptId);
+    expect(pending).toMatchObject({
+      displayName: 'Admin User',
+      email: 'admin@test.com',
+    });
+    const completed = await service.complete(result.state, {
+      handle: 'admin',
+      totpCode: '123456',
+    });
+    expect(completed.user).toMatchObject({ email: 'admin@test.com' });
   });
 
   it('rejects invalid handles and existing users', async () => {
@@ -294,6 +313,93 @@ describe('BootstrapService atomic first-user flow', () => {
     expect(await storage.getFirstUserBootstrapReceipt(TENANT_ID)).toBeNull();
   });
 
+  it('awaits an asynchronous TOTP rejection without finalizing authority', async () => {
+    const asyncVerifier = new BootstrapService({
+      ...config,
+      verifyTOTP: async () => false,
+    });
+    const { state } = await asyncVerifier.initiate({
+      handle: 'admin',
+      password: 'SecurePassword123!',
+      displayName: 'Admin User',
+    });
+
+    await expect(asyncVerifier.complete(state, {
+      handle: 'admin',
+      totpCode: '123456',
+    })).resolves.toMatchObject({
+      success: false,
+      error: expect.stringMatching(/invalid TOTP code/i),
+    });
+    expect(await storage.hasUsers()).toBe(false);
+    expect(await storage.getTOTPSecret('admin')).toBeNull();
+    expect(await storage.getFirstUserBootstrapReceipt(TENANT_ID)).toBeNull();
+  });
+
+  it('accepts asynchronous and synchronous TOTP verifiers only when they return true', async () => {
+    const asyncVerifier = new BootstrapService({
+      ...config,
+      verifyTOTP: async () => true,
+    });
+    const { state } = await asyncVerifier.initiate({
+      handle: 'admin',
+      password: 'SecurePassword123!',
+      displayName: 'Admin User',
+    });
+    await expect(asyncVerifier.complete(state, {
+      handle: 'admin',
+      totpCode: '123456',
+    })).resolves.toMatchObject({
+      success: true,
+      user: expect.objectContaining({ role: 'super_admin' }),
+    });
+
+    await storage.close();
+    storage = new MemoryStorageAdapter();
+    await storage.init();
+    attemptStore = new MemoryBootstrapAttemptStore(() => new Date(nowMs));
+    const syncVerifier = new BootstrapService({
+      ...config,
+      storage,
+      attemptStore,
+      verifyTOTP: () => true,
+    });
+    const second = await syncVerifier.initiate({
+      handle: 'admin',
+      password: 'SecurePassword123!',
+      displayName: 'Admin User',
+    });
+    await expect(syncVerifier.complete(second.state, {
+      handle: 'admin',
+      totpCode: '123456',
+    })).resolves.toMatchObject({ success: true });
+  });
+
+  it('fails closed when an asynchronous TOTP verifier rejects', async () => {
+    const rejectingVerifier = new BootstrapService({
+      ...config,
+      verifyTOTP: async () => {
+        throw new Error('TOTP verifier unavailable');
+      },
+    });
+    const { state } = await rejectingVerifier.initiate({
+      handle: 'admin',
+      password: 'SecurePassword123!',
+      displayName: 'Admin User',
+    });
+
+    await expect(rejectingVerifier.complete(state, {
+      handle: 'admin',
+      totpCode: '123456',
+    })).resolves.toEqual({
+      success: false,
+      error: 'TOTP verifier unavailable',
+    });
+    expect(await storage.hasUsers()).toBe(false);
+    expect(await storage.getTOTPSecret('admin')).toBeNull();
+    expect(await storage.getFirstUserBootstrapReceipt(TENANT_ID)).toBeNull();
+  });
+
   it('fails closed for forged state, mismatch, and isolated custody', async () => {
     const { state } = await initiate();
     await expect(service.complete(
@@ -323,6 +429,32 @@ describe('BootstrapService atomic first-user flow', () => {
       error: expect.stringMatching(/expired/i),
     });
     expect(await storage.hasUsers()).toBe(false);
+  });
+
+  it.each([
+    [599_999, true],
+    [600_000, true],
+    [600_001, false],
+  ])('uses the inclusive completion lifetime at %i ms', async (ageMs, expected) => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    try {
+      const startedAt = nowMs;
+      vi.setSystemTime(startedAt);
+      const { state } = await initiate();
+      nowMs = startedAt + ageMs;
+      vi.setSystemTime(nowMs);
+
+      const result = await complete(state);
+      expect(result.success).toBe(expected);
+      expect(await storage.hasUsers()).toBe(expected);
+      if (expected) {
+        expect(result.user).toMatchObject({ role: 'super_admin' });
+      } else {
+        expect(result.error).toMatch(/expired/i);
+      }
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('makes concurrent exact completion idempotent', async () => {
@@ -478,10 +610,15 @@ describe('BootstrapService atomic first-user flow', () => {
   });
 
   it('validates state through server custody, not client timestamps', async () => {
+    const startedAt = nowMs;
     const { state } = await initiate();
-    await expect(service.isStateValid(state)).resolves.toBe(true);
     await expect(service.isStateValid({ version: 1, attemptId: 'unknown' })).resolves.toBe(false);
-    nowMs += 11 * 60 * 1000;
+
+    nowMs = startedAt + 599_999;
+    await expect(service.isStateValid(state)).resolves.toBe(true);
+    nowMs = startedAt + 600_000;
+    await expect(service.isStateValid(state)).resolves.toBe(true);
+    nowMs = startedAt + 600_001;
     await expect(service.isStateValid(state)).resolves.toBe(false);
   });
 
@@ -490,18 +627,20 @@ describe('BootstrapService atomic first-user flow', () => {
   });
 
   it('passes the reusable attempt-store conformance contract', async () => {
+    const harnessOrigin = Date.parse('2041-02-03T04:05:06.000Z');
     const results = await runBootstrapAttemptStoreConformance(async () => {
-      let conformanceNow = Date.now();
+      let conformanceNow = harnessOrigin;
       return {
         store: new MemoryBootstrapAttemptStore(
           () => new Date(conformanceNow),
         ),
+        now: () => new Date(conformanceNow),
         advanceTime: async (ms) => {
           conformanceNow += ms;
         },
         cleanup: async () => undefined,
       };
     });
-    expect(results).toHaveLength(8);
+    expect(results).toHaveLength(9);
   });
 });

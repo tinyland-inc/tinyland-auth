@@ -53,6 +53,7 @@ vitest_bin.vitest_test(
         ".github/workflows/ci.yml",
         ".github/workflows/publish.yml",
         "BUILD.bazel",
+        "CHANGELOG.md",
         "MODULE.bazel",
         "README.md",
         "scripts/check-invitation-authority.mjs",

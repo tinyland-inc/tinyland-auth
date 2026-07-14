@@ -1,20 +1,41 @@
 import { createHash, randomUUID } from 'crypto';
 import type { IStorageAdapter } from './interface.js';
 import {
+  FIRST_USER_BOOTSTRAP_CLAIM_MAX_AGE_MS,
+  canonicalizeFirstUserBootstrapClaimResult,
+  canonicalizeFirstUserBootstrapFinalizationPayload,
+  cloneBootstrapValue,
   firstUserBootstrapValueDigest,
+  normalizeFirstUserBootstrapTenantId,
+  parseFirstUserBootstrapReceipt,
+  parseFirstUserBootstrapReceiptForTenant,
   type FirstUserBootstrapFinalization,
+  type FirstUserBootstrapReceipt,
+  type FirstUserBootstrapReceiptExpectation,
   type InertFirstUserClaim,
 } from './firstUserBootstrap.js';
 
 const SYNTHETIC_BCRYPT_HASH = `$2b$04$${'A'.repeat(53)}`;
 
+type AdminUserWithUnknown = FirstUserBootstrapFinalization['user'] & {
+  password?: string;
+};
+
+function cloneFinalization(
+  value: FirstUserBootstrapFinalization,
+): FirstUserBootstrapFinalization {
+  return cloneBootstrapValue(value);
+}
+
 export interface FirstUserBootstrapConformanceHarness {
   storage: IStorageAdapter;
+  now(): Date;
+  advanceTime(ms: number): Promise<void>;
   cleanup(): Promise<void>;
 }
 
 export type FirstUserBootstrapConformanceHarnessFactory =
-  () => Promise<FirstUserBootstrapConformanceHarness>;
+  (tenantId: string) => Promise<FirstUserBootstrapConformanceHarness>;
 
 export interface FirstUserBootstrapConformanceResult {
   name: string;
@@ -48,16 +69,59 @@ async function rejects(operation: () => Promise<unknown>): Promise<boolean> {
   }
 }
 
+async function claimBootstrap(
+  storage: IStorageAdapter,
+  claim: InertFirstUserClaim,
+): Promise<InertFirstUserClaim> {
+  const returned = await storage.claimFirstUserBootstrap(claim);
+  return canonicalizeFirstUserBootstrapClaimResult(returned, claim);
+}
+
+async function finalizeBootstrap(
+  storage: IStorageAdapter,
+  claim: InertFirstUserClaim,
+  finalization: FirstUserBootstrapFinalization,
+): Promise<FirstUserBootstrapReceipt> {
+  const canonicalFinalization =
+    canonicalizeFirstUserBootstrapFinalizationPayload(finalization);
+  const returned = await storage.finalizeFirstUserBootstrap(canonicalFinalization);
+  return parseFirstUserBootstrapReceipt(returned, {
+    claim,
+    finalization: canonicalFinalization,
+  });
+}
+
+async function readBootstrapReceipt(
+  storage: IStorageAdapter,
+  tenantId: string,
+  expected?: FirstUserBootstrapReceiptExpectation,
+): Promise<FirstUserBootstrapReceipt | null> {
+  const canonicalTenantId = normalizeFirstUserBootstrapTenantId(tenantId);
+  const returned = await storage.getFirstUserBootstrapReceipt(canonicalTenantId);
+  if (returned === null) return null;
+  const receipt = expected
+    ? parseFirstUserBootstrapReceipt(returned, expected)
+    : parseFirstUserBootstrapReceiptForTenant(returned, canonicalTenantId);
+  assert(
+    receipt.tenantId === canonicalTenantId,
+    'storage returned a bootstrap receipt for a different tenant',
+  );
+  return receipt;
+}
+
 function syntheticHash(label: string): string {
   return createHash('sha256').update(`synthetic-${label}`).digest('hex');
 }
 
-function createMaterial(): {
+function createMaterial(
+  tenantId: string,
+  claimedAtMs: number,
+  finalizedAtMs: number = claimedAtMs,
+): {
   claim: InertFirstUserClaim;
   finalization: FirstUserBootstrapFinalization;
 } {
-  const claimedAt = new Date(Date.now() - 1000).toISOString();
-  const tenantId = randomUUID();
+  const claimedAt = new Date(claimedAtMs).toISOString();
   const userId = randomUUID();
   const claim: InertFirstUserClaim = {
     version: 1,
@@ -73,7 +137,7 @@ function createMaterial(): {
     },
     claimedAt,
   };
-  const finalizedAt = new Date().toISOString();
+  const finalizedAt = new Date(finalizedAtMs).toISOString();
   return {
     claim,
     finalization: {
@@ -117,25 +181,59 @@ function createMaterial(): {
   };
 }
 
-async function runCase(
+interface FirstUserBootstrapConformanceClock {
+  nowMs(): number;
+  advanceTime(ms: number): Promise<void>;
+}
+
+function harnessNowMs(harness: FirstUserBootstrapConformanceHarness): number {
+  const nowMs = harness.now().getTime();
+  assert(Number.isSafeInteger(nowMs), 'harness clock returned an invalid date');
+  return nowMs;
+}
+
+async function advanceHarnessTime(
+  harness: FirstUserBootstrapConformanceHarness,
+  ms: number,
+): Promise<void> {
+  assert(Number.isSafeInteger(ms) && ms >= 0, 'clock advance must be a non-negative integer');
+  const before = harnessNowMs(harness);
+  await harness.advanceTime(ms);
+  assert(
+    harnessNowMs(harness) === before + ms,
+    `harness clock did not advance by exactly ${ms} ms`,
+  );
+}
+
+function runCase(
   name: string,
   createHarness: FirstUserBootstrapConformanceHarnessFactory,
-  test: (storage: IStorageAdapter) => Promise<void>,
-): Promise<FirstUserBootstrapConformanceResult> {
-  const harness = await createHarness();
-  try {
-    await harness.storage.init();
-    await test(harness.storage);
-    return { name, passed: true };
-  } catch (error) {
-    throw new FirstUserBootstrapConformanceError(name, error);
-  } finally {
+  test: (
+    storage: IStorageAdapter,
+    tenantId: string,
+    clock: FirstUserBootstrapConformanceClock,
+  ) => Promise<void>,
+): () => Promise<FirstUserBootstrapConformanceResult> {
+  return async () => {
+    const tenantId = randomUUID();
+    const harness = await createHarness(tenantId);
     try {
-      await harness.storage.close();
+      await harness.storage.init();
+      await test(harness.storage, tenantId, {
+        nowMs: () => harnessNowMs(harness),
+        advanceTime: (ms) => advanceHarnessTime(harness, ms),
+      });
+      return { name, passed: true };
+    } catch (error) {
+      throw new FirstUserBootstrapConformanceError(name, error);
     } finally {
-      await harness.cleanup();
+      try {
+        await harness.storage.close();
+      } finally {
+        await harness.cleanup();
+      }
     }
-  }
+  };
 }
 
 /**
@@ -145,15 +243,15 @@ async function runCase(
 export async function runFirstUserBootstrapStorageConformance(
   createHarness: FirstUserBootstrapConformanceHarnessFactory,
 ): Promise<FirstUserBootstrapConformanceResult[]> {
-  const cases: Array<Promise<FirstUserBootstrapConformanceResult>> = [];
+  const cases: Array<() => Promise<FirstUserBootstrapConformanceResult>> = [];
 
-  cases.push(runCase('concurrent claims have one winner', createHarness, async (storage) => {
-    const first = createMaterial().claim;
-    const second = createMaterial().claim;
-    second.tenantId = first.tenantId;
+  cases.push(runCase('concurrent claims have one winner', createHarness, async (storage, tenantId, clock) => {
+    const nowMs = clock.nowMs();
+    const first = createMaterial(tenantId, nowMs).claim;
+    const second = createMaterial(tenantId, nowMs).claim;
     const outcomes = await Promise.allSettled([
-      storage.claimFirstUserBootstrap(first),
-      storage.claimFirstUserBootstrap(second),
+      claimBootstrap(storage, first),
+      claimBootstrap(storage, second),
     ]);
     assert(
       outcomes.filter((outcome) => outcome.status === 'fulfilled').length === 1,
@@ -161,16 +259,16 @@ export async function runFirstUserBootstrapStorageConformance(
     );
   }));
 
-  cases.push(runCase('active or credentialed claims are rejected', createHarness, async (storage) => {
-    const active = createMaterial().claim;
+  cases.push(runCase('active or credentialed claims are rejected', createHarness, async (storage, tenantId, clock) => {
+    const nowMs = clock.nowMs();
+    const active = createMaterial(tenantId, nowMs).claim;
     (active.actor as { isActive: boolean }).isActive = true;
     assert(
       await rejects(() => storage.claimFirstUserBootstrap(active)),
       'active claim was accepted',
     );
 
-    const credentialed = createMaterial().claim;
-    credentialed.tenantId = active.tenantId;
+    const credentialed = createMaterial(tenantId, nowMs).claim;
     (credentialed.actor as unknown as { passwordHash: string }).passwordHash =
       SYNTHETIC_BCRYPT_HASH;
     assert(
@@ -179,12 +277,146 @@ export async function runFirstUserBootstrapStorageConformance(
     );
   }));
 
-  cases.push(runCase('concurrent exact finalization is idempotent', createHarness, async (storage) => {
-    const { claim, finalization } = createMaterial();
-    await storage.claimFirstUserBootstrap(claim);
+  cases.push(runCase('claim schemas are exact and rejection leaves no claim', createHarness, async (storage, tenantId, clock) => {
+    const nowMs = clock.nowMs();
+    const unknown = createMaterial(tenantId, nowMs).claim as InertFirstUserClaim & {
+      credentials?: { passwordHash: string };
+    };
+    unknown.credentials = { passwordHash: SYNTHETIC_BCRYPT_HASH };
+    assert(
+      await rejects(() => storage.claimFirstUserBootstrap(unknown)),
+      'claim with an unknown credential alias was accepted',
+    );
+
+    const missing = createMaterial(tenantId, nowMs).claim;
+    Reflect.deleteProperty(
+      missing as unknown as Record<string, unknown>,
+      'claimedAt',
+    );
+    assert(
+      await rejects(() => storage.claimFirstUserBootstrap(missing as InertFirstUserClaim)),
+      'claim with a missing required field was accepted',
+    );
+
+    const valid = createMaterial(tenantId, nowMs).claim;
+    await claimBootstrap(storage, valid);
+    assert(!(await storage.hasUsers()), 'rejected claim material created authority');
+  }));
+
+  cases.push(runCase('claim timestamps are bound and expired inputs are rejected', createHarness, async (storage, tenantId, clock) => {
+    const nowMs = clock.nowMs();
+    const expired = createMaterial(tenantId, nowMs).claim;
+    expired.claimedAt = new Date(
+      nowMs - FIRST_USER_BOOTSTRAP_CLAIM_MAX_AGE_MS - 1,
+    ).toISOString();
+    assert(
+      await rejects(() => storage.claimFirstUserBootstrap(expired)),
+      'claim older than the fixed ten-minute lifetime was accepted',
+    );
+
+    const fresh = createMaterial(tenantId, nowMs).claim;
+    const returned = await claimBootstrap(storage, fresh);
+    assert(
+      returned.claimedAt === fresh.claimedAt,
+      'storage changed claimedAt while accepting a bootstrap claim',
+    );
+  }));
+
+  cases.push(runCase('finalization succeeds at 599999 ms', createHarness, async (storage, tenantId, clock) => {
+    assert(
+      FIRST_USER_BOOTSTRAP_CLAIM_MAX_AGE_MS === 600_000,
+      'first-user claim lifetime is not ten minutes',
+    );
+    const startedAt = clock.nowMs();
+    const { claim, finalization } = createMaterial(
+      tenantId,
+      startedAt,
+      startedAt + 599_999,
+    );
+    await claimBootstrap(storage, claim);
+    await clock.advanceTime(599_999);
+    await finalizeBootstrap(storage, claim, finalization);
+  }));
+
+  cases.push(runCase('finalization succeeds at 600000 ms', createHarness, async (storage, tenantId, clock) => {
+    const startedAt = clock.nowMs();
+    const { claim, finalization } = createMaterial(
+      tenantId,
+      startedAt,
+      startedAt + FIRST_USER_BOOTSTRAP_CLAIM_MAX_AGE_MS,
+    );
+    await claimBootstrap(storage, claim);
+    await clock.advanceTime(FIRST_USER_BOOTSTRAP_CLAIM_MAX_AGE_MS);
+    await finalizeBootstrap(storage, claim, finalization);
+  }));
+
+  cases.push(runCase('finalization is rejected at 600001 ms', createHarness, async (storage, tenantId, clock) => {
+    const startedAt = clock.nowMs();
+    const { claim, finalization } = createMaterial(
+      tenantId,
+      startedAt,
+      startedAt + FIRST_USER_BOOTSTRAP_CLAIM_MAX_AGE_MS,
+    );
+    await claimBootstrap(storage, claim);
+    await clock.advanceTime(FIRST_USER_BOOTSTRAP_CLAIM_MAX_AGE_MS + 1);
+    assert(
+      await rejects(() => storage.finalizeFirstUserBootstrap(finalization)),
+      'finalization was accepted at 600001 ms',
+    );
+    assert(!(await storage.hasUsers()), 'expired finalization created authority');
+    assert(
+      (await readBootstrapReceipt(storage, tenantId)) === null,
+      'expired finalization persisted a receipt',
+    );
+  }));
+
+  cases.push(runCase('canonical digest rejects lossy non-JSON values', createHarness, async () => {
+    const accessor = Object.defineProperty({}, 'value', {
+      enumerable: true,
+      get: () => 'not-data',
+    });
+    const symbolKey = { value: 'visible' } as Record<PropertyKey, unknown>;
+    symbolKey[Symbol('hidden')] = 'not-json';
+    const cycle: Record<string, unknown> = {};
+    cycle.self = cycle;
+    const invalidValues: unknown[] = [
+      undefined,
+      Number.NaN,
+      Number.POSITIVE_INFINITY,
+      Number.NEGATIVE_INFINITY,
+      -0,
+      () => undefined,
+      Symbol('bootstrap'),
+      1n,
+      new Array(1),
+      new Date(),
+      new Map([['value', 'not-json']]),
+      accessor,
+      symbolKey,
+      cycle,
+    ];
+    for (const value of invalidValues) {
+      let rejected = false;
+      try {
+        firstUserBootstrapValueDigest(value);
+      } catch {
+        rejected = true;
+      }
+      assert(rejected, `digest accepted ${String(value)}`);
+    }
+    assert(
+      firstUserBootstrapValueDigest({ value: 0 }) !==
+        firstUserBootstrapValueDigest({ value: null }),
+      'distinct canonical JSON values shared a digest input',
+    );
+  }));
+
+  cases.push(runCase('concurrent exact finalization is idempotent', createHarness, async (storage, tenantId, clock) => {
+    const { claim, finalization } = createMaterial(tenantId, clock.nowMs());
+    await claimBootstrap(storage, claim);
     const receipts = await Promise.all([
-      storage.finalizeFirstUserBootstrap(finalization),
-      storage.finalizeFirstUserBootstrap(finalization),
+      finalizeBootstrap(storage, claim, finalization),
+      finalizeBootstrap(storage, claim, finalization),
     ]);
     assert(
       firstUserBootstrapValueDigest(receipts[0]) ===
@@ -193,9 +425,9 @@ export async function runFirstUserBootstrapStorageConformance(
     );
   }));
 
-  cases.push(runCase('claim remains inert', createHarness, async (storage) => {
-    const { claim } = createMaterial();
-    await storage.claimFirstUserBootstrap(claim);
+  cases.push(runCase('claim remains inert', createHarness, async (storage, tenantId, clock) => {
+    const { claim } = createMaterial(tenantId, clock.nowMs());
+    await claimBootstrap(storage, claim);
     assert(!(await storage.hasUsers()), 'claim created an active user');
     assert(
       await rejects(() =>
@@ -204,12 +436,15 @@ export async function runFirstUserBootstrapStorageConformance(
     );
   }));
 
-  cases.push(runCase('receipt survives mutable state changes', createHarness, async (storage) => {
-    const { claim, finalization } = createMaterial();
-    await storage.claimFirstUserBootstrap(claim);
-    const receipt = await storage.finalizeFirstUserBootstrap(finalization);
+  cases.push(runCase('receipt survives mutable state changes', createHarness, async (storage, tenantId, clock) => {
+    const { claim, finalization } = createMaterial(tenantId, clock.nowMs());
+    await claimBootstrap(storage, claim);
+    const receipt = await finalizeBootstrap(storage, claim, finalization);
     await storage.updateUser(claim.actor.id, { displayName: 'Synthetic Current State' });
-    const persisted = await storage.getFirstUserBootstrapReceipt(claim.tenantId);
+    const persisted = await readBootstrapReceipt(storage, claim.tenantId, {
+      claim,
+      finalization,
+    });
     assert(
       persisted !== null &&
         firstUserBootstrapValueDigest(receipt) ===
@@ -218,10 +453,10 @@ export async function runFirstUserBootstrapStorageConformance(
     );
   }));
 
-  cases.push(runCase('invalid material fails before authority exists', createHarness, async (storage) => {
-    const { claim, finalization } = createMaterial();
+  cases.push(runCase('invalid material fails before authority exists', createHarness, async (storage, tenantId, clock) => {
+    const { claim, finalization } = createMaterial(tenantId, clock.nowMs());
     finalization.user.passwordHash = 'synthetic-invalid-bcrypt';
-    await storage.claimFirstUserBootstrap(claim);
+    await claimBootstrap(storage, claim);
     assert(
       await rejects(() => storage.finalizeFirstUserBootstrap(finalization)),
       'invalid finalization was accepted',
@@ -239,12 +474,112 @@ export async function runFirstUserBootstrapStorageConformance(
       'duplicate backup-code record was accepted',
     );
     assert(!(await storage.hasUsers()), 'invalid finalization created a user');
+    assert((await storage.getUser(claim.actor.id)) === null, 'invalid finalization persisted a user');
+    assert(
+      (await storage.getTOTPSecret(claim.actor.handle)) === null,
+      'invalid finalization persisted a TOTP factor',
+    );
+    assert(
+      (await storage.getBackupCodes(claim.actor.id)) === null,
+      'invalid finalization persisted backup codes',
+    );
+    assert(
+      (await readBootstrapReceipt(storage, tenantId)) === null,
+      'invalid finalization persisted a receipt',
+    );
   }));
 
-  cases.push(runCase('mismatched finalization replay conflicts', createHarness, async (storage) => {
-    const { claim, finalization } = createMaterial();
-    await storage.claimFirstUserBootstrap(claim);
-    await storage.finalizeFirstUserBootstrap(finalization);
+  cases.push(runCase('finalization schemas are exact before commit and replay', createHarness, async (storage, tenantId, clock) => {
+    const { claim, finalization } = createMaterial(tenantId, clock.nowMs());
+    await claimBootstrap(storage, claim);
+
+    const malformed: FirstUserBootstrapFinalization[] = [];
+    const unknownRoot = cloneFinalization(finalization);
+    (unknownRoot as unknown as Record<string, unknown>).credentialAlias =
+      'not-allowed';
+    malformed.push(unknownRoot);
+    const unknown = cloneFinalization(finalization);
+    (unknown.user as AdminUserWithUnknown).password = 'credential-alias';
+    malformed.push(unknown);
+    const missingOnboarding = cloneFinalization(finalization);
+    Reflect.deleteProperty(
+      missingOnboarding.user as unknown as Record<string, unknown>,
+      'needsOnboarding',
+    );
+    malformed.push(missingOnboarding);
+    const undefinedEmail = cloneFinalization(finalization);
+    undefinedEmail.user.email = undefined;
+    malformed.push(undefinedEmail);
+    const nonCanonicalEmail = cloneFinalization(finalization);
+    nonCanonicalEmail.user.email = 'BOOTSTRAP@EXAMPLE.COM';
+    malformed.push(nonCanonicalEmail);
+    const invalidRole = cloneFinalization(finalization);
+    invalidRole.user.role = 'admin';
+    malformed.push(invalidRole);
+    const lockedUser = cloneFinalization(finalization);
+    lockedUser.user.isLocked = true;
+    malformed.push(lockedUser);
+    const negativeZero = cloneFinalization(finalization);
+    negativeZero.user.onboardingStep = -0;
+    malformed.push(negativeZero);
+    const notANumber = cloneFinalization(finalization);
+    notANumber.user.onboardingStep = Number.NaN;
+    malformed.push(notANumber);
+    const infiniteVersion = cloneFinalization(finalization);
+    infiniteVersion.totpSecret.version = Number.POSITIVE_INFINITY;
+    malformed.push(infiniteVersion);
+    const functionValue = cloneFinalization(finalization);
+    (functionValue.user as unknown as Record<string, unknown>).displayName =
+      () => undefined;
+    malformed.push(functionValue);
+    const symbolValue = cloneFinalization(finalization);
+    (symbolValue.user as unknown as Record<string, unknown>).theme =
+      Symbol('theme');
+    malformed.push(symbolValue);
+    const bigintValue = cloneFinalization(finalization);
+    Object.assign(bigintValue.user, {
+      githubId: 1n,
+      githubLogin: 'bootstrap-admin',
+      githubLinkedAt: finalization.finalizedAt,
+    });
+    malformed.push(bigintValue);
+    const sparseCodes = cloneFinalization(finalization);
+    sparseCodes.backupCodes.codes = new Array(2);
+    malformed.push(sparseCodes);
+
+    for (const value of malformed) {
+      assert(
+        await rejects(() => storage.finalizeFirstUserBootstrap(value)),
+        'malformed finalization was accepted',
+      );
+      assert(!(await storage.hasUsers()), 'malformed finalization partially committed a user');
+      assert(
+        (await storage.getTOTPSecret(claim.actor.handle)) === null &&
+          (await storage.getBackupCodes(claim.actor.id)) === null &&
+          (await readBootstrapReceipt(storage, tenantId)) === null,
+        'malformed finalization partially committed factors or a receipt',
+      );
+    }
+
+    const receipt = await finalizeBootstrap(storage, claim, finalization);
+    const malformedReplay = cloneFinalization(finalization);
+    malformedReplay.user.displayName = undefined;
+    assert(
+      await rejects(() => storage.finalizeFirstUserBootstrap(malformedReplay)),
+      'non-JSON completed replay was compared as an exact digest',
+    );
+    assert(
+      firstUserBootstrapValueDigest(
+        await readBootstrapReceipt(storage, tenantId, { claim, finalization }),
+      ) === firstUserBootstrapValueDigest(receipt),
+      'malformed replay changed the immutable receipt',
+    );
+  }));
+
+  cases.push(runCase('mismatched finalization replay conflicts', createHarness, async (storage, tenantId, clock) => {
+    const { claim, finalization } = createMaterial(tenantId, clock.nowMs());
+    await claimBootstrap(storage, claim);
+    await finalizeBootstrap(storage, claim, finalization);
     finalization.user.displayName = 'Mismatched Synthetic Replay';
     assert(
       await rejects(() => storage.finalizeFirstUserBootstrap(finalization)),
@@ -252,22 +587,22 @@ export async function runFirstUserBootstrapStorageConformance(
     );
   }));
 
-  cases.push(runCase('bootstrap actors are deletion-protected', createHarness, async (storage) => {
-    const { claim, finalization } = createMaterial();
-    await storage.claimFirstUserBootstrap(claim);
+  cases.push(runCase('bootstrap actors are deletion-protected', createHarness, async (storage, tenantId, clock) => {
+    const { claim, finalization } = createMaterial(tenantId, clock.nowMs());
+    await claimBootstrap(storage, claim);
     assert(
       await rejects(() => storage.deleteUser(claim.actor.id)),
       'claimed actor deletion was accepted',
     );
-    await storage.finalizeFirstUserBootstrap(finalization);
+    await finalizeBootstrap(storage, claim, finalization);
     assert(
       await rejects(() => storage.deleteUser(claim.actor.id)),
       'finalized actor deletion was accepted',
     );
   }));
 
-  cases.push(runCase('ordinary user deletion revokes sessions', createHarness, async (storage) => {
-    const now = new Date().toISOString();
+  cases.push(runCase('ordinary user deletion revokes sessions', createHarness, async (storage, _tenantId, clock) => {
+    const now = new Date(clock.nowMs()).toISOString();
     const user = await storage.createUser({
       handle: `ordinary_${randomUUID().slice(0, 8)}`,
       passwordHash: SYNTHETIC_BCRYPT_HASH,
@@ -284,10 +619,10 @@ export async function runFirstUserBootstrapStorageConformance(
     assert((await storage.getSession(session.id)) === null, 'user session survived deletion');
   }));
 
-  cases.push(runCase('ordinary creation cannot bypass an active claim', createHarness, async (storage) => {
-    const { claim } = createMaterial();
-    await storage.claimFirstUserBootstrap(claim);
-    const timestamp = new Date().toISOString();
+  cases.push(runCase('ordinary creation cannot bypass an active claim', createHarness, async (storage, tenantId, clock) => {
+    const { claim } = createMaterial(tenantId, clock.nowMs());
+    await claimBootstrap(storage, claim);
+    const timestamp = new Date(clock.nowMs()).toISOString();
     assert(
       await rejects(() => storage.createUser({
         handle: 'bypass_admin',
@@ -304,15 +639,15 @@ export async function runFirstUserBootstrapStorageConformance(
     );
   }));
 
-  cases.push(runCase('session identity cannot bypass claimed-actor confinement', createHarness, async (storage) => {
-    const { claim } = createMaterial();
+  cases.push(runCase('session identity cannot bypass claimed-actor confinement', createHarness, async (storage, tenantId, clock) => {
+    const { claim } = createMaterial(tenantId, clock.nowMs());
     const unrelatedUserId = randomUUID();
     const existingSession = await storage.createSession(unrelatedUserId, {
       id: unrelatedUserId,
       handle: 'unrelated_session_actor',
       role: 'member',
     });
-    await storage.claimFirstUserBootstrap(claim);
+    await claimBootstrap(storage, claim);
     assert(
       await rejects(() => storage.createSession('unrelated-user', {
         id: claim.actor.id,
@@ -352,10 +687,10 @@ export async function runFirstUserBootstrapStorageConformance(
     );
   }));
 
-  cases.push(runCase('returned bootstrap authority is not a mutable alias', createHarness, async (storage) => {
-    const { claim, finalization } = createMaterial();
-    await storage.claimFirstUserBootstrap(claim);
-    await storage.finalizeFirstUserBootstrap(finalization);
+  cases.push(runCase('returned bootstrap authority is not a mutable alias', createHarness, async (storage, tenantId, clock) => {
+    const { claim, finalization } = createMaterial(tenantId, clock.nowMs());
+    await claimBootstrap(storage, claim);
+    await finalizeBootstrap(storage, claim, finalization);
 
     const user = await storage.getUser(claim.actor.id);
     const totp = await storage.getTOTPSecret(claim.actor.handle);
@@ -377,10 +712,33 @@ export async function runFirstUserBootstrapStorageConformance(
     );
   }));
 
-  cases.push(runCase('finalized bootstrap factors cannot be deleted independently', createHarness, async (storage) => {
-    const { claim, finalization } = createMaterial();
-    await storage.claimFirstUserBootstrap(claim);
-    await storage.finalizeFirstUserBootstrap(finalization);
+  cases.push(runCase('finalized factors persist and session authority is revocable', createHarness, async (storage, tenantId, clock) => {
+    const { claim, finalization } = createMaterial(tenantId, clock.nowMs());
+    await claimBootstrap(storage, claim);
+    await finalizeBootstrap(storage, claim, finalization);
+    assert(
+      firstUserBootstrapValueDigest(await storage.getTOTPSecret(claim.actor.handle)) ===
+        firstUserBootstrapValueDigest(finalization.totpSecret),
+      'finalized TOTP factor did not persist exactly',
+    );
+    assert(
+      firstUserBootstrapValueDigest(await storage.getBackupCodes(claim.actor.id)) ===
+        firstUserBootstrapValueDigest(finalization.backupCodes),
+      'finalized backup codes did not persist exactly',
+    );
+    const session = await storage.createSession(claim.actor.id, finalization.user);
+    assert(
+      (await storage.getSession(session.id))?.userId === claim.actor.id,
+      'finalized actor did not receive session authority',
+    );
+    assert(await storage.deleteSession(session.id), 'finalized actor session was not revoked');
+    assert((await storage.getSession(session.id)) === null, 'revoked session remained authoritative');
+  }));
+
+  cases.push(runCase('finalized bootstrap factors cannot be deleted independently', createHarness, async (storage, tenantId, clock) => {
+    const { claim, finalization } = createMaterial(tenantId, clock.nowMs());
+    await claimBootstrap(storage, claim);
+    await finalizeBootstrap(storage, claim, finalization);
     assert(
       await rejects(() => storage.deleteTOTPSecret(claim.actor.handle)),
       'finalized TOTP factor was deleted independently',
@@ -391,5 +749,7 @@ export async function runFirstUserBootstrapStorageConformance(
     );
   }));
 
-  return Promise.all(cases);
+  const results: FirstUserBootstrapConformanceResult[] = [];
+  for (const run of cases) results.push(await run());
+  return results;
 }

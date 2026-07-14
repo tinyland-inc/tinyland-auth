@@ -52,10 +52,16 @@ before claiming exactly-once acceptance.
 
 ## Storage Adapters
 
-Implement `IStorageAdapter` for your backend:
+The released 0.7.1 package has these ordinary storage implementations:
 
 - **Built-in**: `MemoryStorageAdapter`, `FileStorageAdapter`
-- **Separate packages**: `@tummycrypt/tinyland-auth-pg` (PostgreSQL), `@tummycrypt/tinyland-auth-redis` (Upstash Redis)
+- **Separate packages**: `@tummycrypt/tinyland-auth-pg` (PostgreSQL),
+  `@tummycrypt/tinyland-auth-redis` (Upstash Redis)
+
+The PostgreSQL and Redis packages implement only the legacy adapter surface.
+They do **not** support the atomic first-user bootstrap protocol described
+below. Do not use either package for that workflow until its dedicated durable
+CAS implementation lands and passes conformance.
 
 The unreleased 0.8 interface requires every implementation to provide the
 native tenant-scoped
@@ -67,20 +73,37 @@ receipt. `isValidInertFirstUserClaim` is exported from `./storage` and the root
 package. The same surface exports canonical finalization validation, material
 digest, receipt creation/parsing, and
 `runFirstUserBootstrapStorageConformance`, a framework-neutral backend test
-runner. External adapters must implement the transaction in their own
-backend. `createFixedTenantStorageAdapter` only injects the tenant id and does
-not create atomicity by composing ordinary writes.
+runner. It passes a fresh normalized tenant UUID to each harness factory so a
+durable backend can isolate every case. A future durable adapter must implement
+the transaction in its own backend. `createFixedTenantStorageAdapter` only
+injects a normalized tenant id
+and forwards normalized payloads; it does not create atomicity by composing
+ordinary writes and does not make the current PG/Redis packages compatible.
 
 The built-in memory instance and file data root are each a single-tenant
 boundary, matching their existing unscoped user/session APIs. Use one instance
-or root per tenant. Multi-tenant PG/Redis backends must eventually scope the
-same protocol by the tenant argument required by `TenantScopedStorage`; the
-current adapter releases do not implement this unreleased 0.8 surface.
+or root per tenant. Future multi-tenant durable backends must scope the same
+protocol by the tenant argument required by `TenantScopedStorage`. The current
+PG/Redis releases do not implement or support this unreleased 0.8 surface.
 
 `FileStorageAdapter.getFirstUserBootstrapPath(tenantId)` always resolves below
-the configured `totpDir`. Completion uses a filesystem lock and atomic rename;
-corrupted claim or receipt state fails closed. The memory and file adapters run
-the same storage conformance suite.
+the configured `totpDir`. Completion uses a constant-space two-slot lock and
+atomic record rename. A winner atomically creates one owner; release stages and
+then publishes hard links to its privately held inode without unlinking any
+current-owner path. After publication, the releaser performs no pathname read
+or delete, so a replacement owner is preserved and fails closed. The
+next winner compacts only the previous, provably released slot while owning the
+other slot. Acquisition inspects a fixed set of paths, holds no contender file
+descriptors, and clamps retry sleeps to the remaining timeout. Corrupted,
+moved, tenant-mismatched, or JSON `null` claim/receipt state fails closed. The
+memory and file adapters run the same storage conformance suite.
+
+An ordinary active-owner timeout should be retried. If timeouts persist after
+all known participants have stopped, owner liveness is ambiguous on a shared
+filesystem and recovery must be attended. Stop every process sharing the file
+root, preserve the lock directory and bootstrap record for diagnosis, verify no
+owner can still run, and only then retire the lock directory. Never remove or
+rewrite an owner/release artifact while any adapter process may still be active.
 
 The guided `BootstrapService` additionally requires a `tenantId` and a
 `BootstrapAttemptStore`. Browser-visible `BootstrapState` contains only a
@@ -94,18 +117,26 @@ when freezing finalization, and pass
 `runBootstrapAttemptStoreConformance` before use. Receipt replay never returns
 pending credential material, and `complete()` never emits backup codes; the
 one-time display is the `initiate()` response. Bootstrap attempts use the
-storage protocol's fixed ten-minute claim window. `systemConfigured` proves
+storage protocol's fixed ten-minute (600,000 ms) claim window. The exact
+boundary remains valid; 600,001 ms is expired, with no clock-skew grace added
+to expiry acceptance. `systemConfigured` proves
 that finalized authority metadata is present and its TOTP ciphertext decrypts;
 it is not a live authenticator-code canary.
+
+`BootstrapService` does not authenticate or authorize whoever calls
+`initiate()`. A downstream integration must place initiation behind an
+operator-only local control, loopback-only command, or equivalently private
+administrative gate before invoking it. Do not expose initiation as a public or
+merely rate-limited first-run endpoint. The opaque browser state protects
+credential custody; it does not provide initiation authorization.
 
 The conformance harness includes an `advanceTime(ms)` hook so durable stores
 must prove a live prepared attempt becomes unreadable, stops blocking the
 tenant, and permits a replacement after expiry. Rejecting only already-expired
 input is not sufficient.
 
-This is the unreleased 0.8 source contract. PostgreSQL and Redis adapter
-implementations, package release metadata, registry promotion, and mothership
-adoption remain separate gates.
+This is only the unreleased 0.8 source contract. No 0.8 package, PostgreSQL or
+Redis implementation, registry promotion, or consumer adoption is claimed.
 
 ## Tinyland Databaseless MVP
 
@@ -126,8 +157,10 @@ storage-layer compare-and-swap for general mutable auth records. The atomic
 first-user bootstrap methods are the narrow exception; they do not make every
 other file-adapter method a distributed transaction. Consumers running more
 than one replica need a
-CAS-capable adapter (e.g. a Postgres/Redis-backed `IStorageAdapter`) or must
-stay pinned to a single replica. The `ha.tinyland.dev/*` exception recorded on
+CAS-capable adapter or must stay pinned to a single replica. The current
+PostgreSQL/Redis packages may serve ordinary auth records but remain
+unsupported for the unreleased atomic bootstrap protocol. The
+`ha.tinyland.dev/*` exception recorded on
 the mothership's staging manifests is the current, honest SSOT statement of
 that constraint in production — it documents the single-replica posture, it
 does not relax it.

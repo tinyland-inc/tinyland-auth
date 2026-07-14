@@ -3,6 +3,7 @@ import type { BootstrapStorage } from '../../storage/interface.js';
 import {
   FirstUserBootstrapConflictError,
   FIRST_USER_BOOTSTRAP_CLAIM_MAX_AGE_MS,
+  normalizeFirstUserBootstrapTenantId,
   type FirstUserBootstrapFinalization,
   type FirstUserBootstrapReceipt,
   type InertFirstUserClaim,
@@ -40,7 +41,7 @@ export interface BootstrapServiceConfig {
   maxAgeMs?: number;
   generateTOTPSecret: () => string;
   generateQRCode: (handle: string, secret: string, issuer: string) => Promise<string>;
-  verifyTOTP: (secret: string, token: string) => boolean;
+  verifyTOTP: (secret: string, token: string) => boolean | Promise<boolean>;
   encryptTOTPSecret: (handle: string, secret: string) => Promise<EncryptedTOTPSecret>;
   decryptTOTPSecret: (secret: EncryptedTOTPSecret) => Promise<string>;
   /** Override only with a generator that preserves at least 128 bits of entropy. */
@@ -97,6 +98,21 @@ function isSafeActorId(value: unknown): value is string {
   );
 }
 
+function normalizeBootstrapInputString(
+  value: unknown,
+  label: string,
+  maximumLength: number,
+): string {
+  if (typeof value !== 'string' || value.includes('\0')) {
+    throw new Error(`${label} must be a string`);
+  }
+  const normalized = value.trim();
+  if (normalized.length === 0 || normalized.length > maximumLength) {
+    throw new Error(`${label} has an invalid length`);
+  }
+  return normalized;
+}
+
 function withoutPasswordHash(user: AdminUser): Omit<AdminUser, 'passwordHash'> {
   const { passwordHash: _passwordHash, ...safeUser } = user;
   return safeUser;
@@ -115,9 +131,7 @@ export class BootstrapService {
   private readonly config: ResolvedBootstrapServiceConfig;
 
   constructor(config: BootstrapServiceConfig) {
-    if (!isBoundedId(config.tenantId)) {
-      throw new Error('Bootstrap tenantId is required');
-    }
+    const tenantId = normalizeFirstUserBootstrapTenantId(config.tenantId);
     const maxAgeMs =
       config.maxAgeMs ?? FIRST_USER_BOOTSTRAP_CLAIM_MAX_AGE_MS;
     if (maxAgeMs !== FIRST_USER_BOOTSTRAP_CLAIM_MAX_AGE_MS) {
@@ -127,6 +141,7 @@ export class BootstrapService {
     }
     this.config = {
       ...config,
+      tenantId,
       bcryptRounds: config.bcryptRounds ?? 12,
       backupCodesCount: config.backupCodesCount ?? 10,
       maxAgeMs,
@@ -198,6 +213,18 @@ export class BootstrapService {
         'Handle must start with a letter, be 3-30 characters, and contain only letters, numbers, underscores, or hyphens',
       );
     }
+    const displayName = normalizeBootstrapInputString(
+      request.displayName,
+      'Display name',
+      256,
+    );
+    let email: string | undefined;
+    if (request.email !== undefined) {
+      email = normalizeBootstrapInputString(request.email, 'Email', 320).toLowerCase();
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        throw new Error('Email is invalid');
+      }
+    }
     const attemptId = this.config.generateAttemptId();
     const actorId = this.config.generateId();
     if (!isStrongAttemptId(attemptId)) {
@@ -242,7 +269,7 @@ export class BootstrapService {
       attemptId,
       actorId,
       handle: request.handle,
-      displayName: request.displayName,
+      displayName,
       passwordHash,
       totpSecret,
       backupCodes: [...backupCodes],
@@ -253,7 +280,7 @@ export class BootstrapService {
       createdAt: claimedAt,
       expiresAt: new Date(createdAt.getTime() + this.config.maxAgeMs).toISOString(),
     };
-    if (request.email !== undefined) pending.email = request.email;
+    if (email !== undefined) pending.email = email;
 
     await this.config.attemptStore.create(pending);
     try {
@@ -388,13 +415,17 @@ export class BootstrapService {
       }
 
       if (!pending.finalization) {
-        if (this.config.now().getTime() >= Date.parse(pending.expiresAt)) {
+        if (this.config.now().getTime() > Date.parse(pending.expiresAt)) {
           return {
             success: false,
             error: 'Bootstrap session expired. Please start over.',
           };
         }
-        if (!this.config.verifyTOTP(pending.totpSecret, verification.totpCode)) {
+        const totpValid = await this.config.verifyTOTP(
+          pending.totpSecret,
+          verification.totpCode,
+        );
+        if (totpValid !== true) {
           return {
             success: false,
             error: 'Invalid TOTP code. Please check your authenticator app.',
@@ -482,7 +513,7 @@ export class BootstrapService {
       state.attemptId,
     );
     if (!pending) return false;
-    return this.config.now().getTime() - Date.parse(pending.createdAt) < maxAgeMs;
+    return this.config.now().getTime() - Date.parse(pending.createdAt) <= maxAgeMs;
   }
 }
 

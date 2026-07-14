@@ -23,14 +23,16 @@ import type {
 import {
   FirstUserBootstrapConflictError,
   FirstUserBootstrapValidationError,
-  assertValidFirstUserBootstrapFinalization,
+  canonicalizeFirstUserBootstrapFinalization,
+  canonicalizeFirstUserBootstrapFinalizationPayload,
+  canonicalizeInertFirstUserClaim,
+  canonicalizeStructuralInertFirstUserClaim,
   cloneBootstrapValue,
   createFirstUserBootstrapReceipt,
   firstUserBootstrapMaterialDigest,
   firstUserBootstrapValueDigest,
   isExpiredInertFirstUserClaim,
-  isStructurallyValidInertFirstUserClaim,
-  isValidInertFirstUserClaim,
+  normalizeFirstUserBootstrapTenantId,
   parseFirstUserBootstrapReceipt,
   type FirstUserBootstrapFinalization,
   type FirstUserBootstrapReceipt,
@@ -40,12 +42,14 @@ import {
 interface ClaimedFirstUserBootstrapRecord {
   version: 1;
   status: 'claimed';
+  tenantId: string;
   claim: InertFirstUserClaim;
 }
 
 interface CompletedFirstUserBootstrapRecord {
   version: 1;
   status: 'completed';
+  tenantId: string;
   claim: InertFirstUserClaim;
   receipt: FirstUserBootstrapReceipt;
   initialState: FirstUserBootstrapFinalization;
@@ -55,42 +59,83 @@ type FirstUserBootstrapRecord =
   | ClaimedFirstUserBootstrapRecord
   | CompletedFirstUserBootstrapRecord;
 
-interface FirstUserBootstrapLockOwner {
-  version: 1;
-  pid: number;
-  token: string;
-  createdAt: string;
+type FirstUserBootstrapLockSlot = 0 | 1;
+
+interface FirstUserBootstrapLockSlotState {
+  slot: FirstUserBootstrapLockSlot;
+  ownerPath: string;
+  heldPath: string;
+  releasingPath: string;
+  releasePath: string;
+  ownerStat: Awaited<ReturnType<typeof fs.lstat>> | null;
+  heldStat: Awaited<ReturnType<typeof fs.lstat>> | null;
+  releasingStat: Awaited<ReturnType<typeof fs.lstat>> | null;
+  releaseStat: Awaited<ReturnType<typeof fs.lstat>> | null;
 }
 
-const FIRST_USER_BOOTSTRAP_PROCESS_TOKEN = randomBytes(16).toString('hex');
-const UNOWNED_LOCK_RECOVERY_GRACE_MS = 30_000;
+type FirstUserBootstrapLockState =
+  | {
+      kind: 'available';
+      slot: FirstUserBootstrapLockSlot;
+      retired: FirstUserBootstrapLockSlotState | null;
+    }
+  | { kind: 'blocked' }
+  | { kind: 'retry' };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-function parseFirstUserBootstrapRecord(value: unknown): FirstUserBootstrapRecord {
+function hasExactKeys(value: Record<string, unknown>, keys: readonly string[]): boolean {
+  const actual = Object.keys(value).sort();
+  const expected = [...keys].sort();
+  return actual.length === expected.length && actual.every((key, index) => key === expected[index]);
+}
+
+function parseFirstUserBootstrapRecord(
+  value: unknown,
+  expectedTenantId?: string,
+): FirstUserBootstrapRecord {
   if (!isRecord(value) || value.version !== 1 || !isRecord(value.claim)) {
     throw new FirstUserBootstrapValidationError(
       'Corrupted first-user bootstrap record',
     );
   }
-  const claimTimestamp = Date.parse(String(value.claim.claimedAt));
+  const tenantId = normalizeFirstUserBootstrapTenantId(value.tenantId);
+  if (value.tenantId !== tenantId || (expectedTenantId !== undefined && tenantId !== expectedTenantId)) {
+    throw new FirstUserBootstrapValidationError(
+      'First-user bootstrap record tenant does not match its filename',
+    );
+  }
+
+  const claim = canonicalizeStructuralInertFirstUserClaim(value.claim);
   if (
-    !Number.isFinite(claimTimestamp) ||
-    !isValidInertFirstUserClaim(value.claim, claimTimestamp)
+    claim.tenantId !== tenantId ||
+    firstUserBootstrapValueDigest(value.claim) !== firstUserBootstrapValueDigest(claim)
   ) {
     throw new FirstUserBootstrapValidationError(
       'Corrupted inert first-user bootstrap claim',
     );
   }
 
-  const claim = value.claim;
   if (value.status === 'claimed') {
-    return { version: 1, status: 'claimed', claim };
+    if (!hasExactKeys(value, ['version', 'status', 'tenantId', 'claim'])) {
+      throw new FirstUserBootstrapValidationError(
+        'Corrupted claimed first-user bootstrap record shape',
+      );
+    }
+    return { version: 1, status: 'claimed', tenantId, claim };
   }
   if (
     value.status !== 'completed' ||
+    !hasExactKeys(value, [
+      'version',
+      'status',
+      'tenantId',
+      'claim',
+      'receipt',
+      'initialState',
+    ]) ||
     !isRecord(value.receipt) ||
     !isRecord(value.initialState)
   ) {
@@ -99,15 +144,40 @@ function parseFirstUserBootstrapRecord(value: unknown): FirstUserBootstrapRecord
     );
   }
 
-  const initialState = value.initialState as unknown as FirstUserBootstrapFinalization;
-  const finalizedAt = Date.parse(String(initialState.finalizedAt));
-  assertValidFirstUserBootstrapFinalization(claim, initialState, finalizedAt);
+  const finalizedAt = Date.parse(String(value.initialState.finalizedAt));
+  if (!Number.isFinite(finalizedAt)) {
+    throw new FirstUserBootstrapValidationError(
+      'Corrupted first-user bootstrap finalization timestamp',
+    );
+  }
+  const initialState = canonicalizeFirstUserBootstrapFinalization(
+    claim,
+    value.initialState,
+    finalizedAt,
+  );
+  if (
+    initialState.tenantId !== tenantId ||
+    firstUserBootstrapValueDigest(value.initialState) !==
+      firstUserBootstrapValueDigest(initialState)
+  ) {
+    throw new FirstUserBootstrapValidationError(
+      'Corrupted canonical first-user bootstrap finalization',
+    );
+  }
   let receipt: FirstUserBootstrapReceipt;
   try {
     receipt = parseFirstUserBootstrapReceipt(value.receipt, {
       claim,
       finalization: initialState,
     });
+    if (
+      firstUserBootstrapValueDigest(value.receipt) !==
+      firstUserBootstrapValueDigest(receipt)
+    ) {
+      throw new FirstUserBootstrapValidationError(
+        'Bootstrap receipt is not stored in canonical form',
+      );
+    }
   } catch (error) {
     throw new FirstUserBootstrapValidationError(
       `Corrupted immutable first-user bootstrap receipt: ${
@@ -119,6 +189,7 @@ function parseFirstUserBootstrapRecord(value: unknown): FirstUserBootstrapRecord
   return {
     version: 1,
     status: 'completed',
+    tenantId,
     claim,
     receipt,
     initialState,
@@ -132,12 +203,20 @@ export interface FileStorageConfig extends StorageAdapterConfig {
   totpDir: string;
   
   sessionMaxAge: number;
+
+  /** Bounded wait before an existing bootstrap lock fails closed. */
+  firstUserBootstrapLockTimeoutMs: number;
+
+  /** Retry interval while waiting for the bootstrap lock. */
+  firstUserBootstrapLockRetryMs: number;
 }
 
 const DEFAULT_CONFIG: FileStorageConfig = {
   authDir: 'content/auth',
   totpDir: '.totp-secrets',
   sessionMaxAge: 7 * 24 * 60 * 60 * 1000, 
+  firstUserBootstrapLockTimeoutMs: 5000,
+  firstUserBootstrapLockRetryMs: 10,
 };
 
 
@@ -163,6 +242,14 @@ export class FileStorageAdapter implements IStorageAdapter {
 
   constructor(config: Partial<FileStorageConfig> = {}) {
     this.config = { ...DEFAULT_CONFIG, ...config };
+    for (const [label, value] of [
+      ['firstUserBootstrapLockTimeoutMs', this.config.firstUserBootstrapLockTimeoutMs],
+      ['firstUserBootstrapLockRetryMs', this.config.firstUserBootstrapLockRetryMs],
+    ] as const) {
+      if (!Number.isSafeInteger(value) || value <= 0) {
+        throw new FirstUserBootstrapValidationError(`${label} must be a positive safe integer`);
+      }
+    }
     this.basePath = config.basePath
       ? path.resolve(config.basePath)
       : process.cwd();
@@ -179,7 +266,7 @@ export class FileStorageAdapter implements IStorageAdapter {
     await this.ensureDir(this.getPath('invites.json'));
     await this.ensureDir(this.getPath('logs/audit.json'));
     await this.ensureDir(path.join(this.basePath, this.config.totpDir, 'backup-codes', '.gitkeep'));
-    await this.ensureDir(this.getFirstUserBootstrapPath('bootstrap-directory'));
+    await this.ensureDir(path.join(this.getFirstUserBootstrapDir(), '.gitkeep'));
   }
 
   async close(): Promise<void> {
@@ -211,10 +298,8 @@ export class FileStorageAdapter implements IStorageAdapter {
   }
 
   getFirstUserBootstrapPath(tenantId: string): string {
-    if (typeof tenantId !== 'string' || tenantId.length === 0 || tenantId.includes('\0')) {
-      throw new FirstUserBootstrapValidationError('tenantId is required');
-    }
-    const tenantKey = createHash('sha256').update(tenantId).digest('hex');
+    const canonicalTenantId = normalizeFirstUserBootstrapTenantId(tenantId);
+    const tenantKey = createHash('sha256').update(canonicalTenantId).digest('hex');
     return path.resolve(
       this.basePath,
       this.config.totpDir,
@@ -227,12 +312,8 @@ export class FileStorageAdapter implements IStorageAdapter {
     return path.resolve(this.basePath, this.config.totpDir, 'first-user-bootstrap');
   }
 
-  private getFirstUserBootstrapLockPath(): string {
+  private getFirstUserBootstrapLockDir(): string {
     return path.resolve(this.basePath, this.config.totpDir, '.first-user-bootstrap.lock');
-  }
-
-  private getFirstUserBootstrapLockOwnerPath(): string {
-    return path.join(this.getFirstUserBootstrapLockPath(), 'owner.json');
   }
 
   private async ensureDir(filePath: string): Promise<void> {
@@ -355,127 +436,368 @@ export class FileStorageAdapter implements IStorageAdapter {
   private async withFirstUserBootstrapLock<T>(
     operation: () => Promise<T>,
   ): Promise<T> {
-    const lockPath = this.getFirstUserBootstrapLockPath();
-    await this.ensureDir(lockPath);
-    const deadline = Date.now() + 5000;
-    const owner: FirstUserBootstrapLockOwner = {
-      version: 1,
-      pid: process.pid,
-      token: FIRST_USER_BOOTSTRAP_PROCESS_TOKEN,
-      createdAt: new Date().toISOString(),
-    };
-
+    const lockDir = this.getFirstUserBootstrapLockDir();
+    try {
+      await fs.mkdir(lockDir, { recursive: true, mode: 0o700 });
+    } catch (error) {
+      throw new FirstUserBootstrapConflictError(
+        `Cannot initialize first-user bootstrap lock directory; operator recovery required: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
+    const deadline = Date.now() + this.config.firstUserBootstrapLockTimeoutMs;
     while (true) {
+      const state = await this.inspectFirstUserBootstrapLock(lockDir);
+      if (state.kind !== 'available') {
+        await this.waitForFirstUserBootstrapLock(deadline);
+        continue;
+      }
+
+      const ownerPath = path.join(lockDir, `${state.slot}.owner`);
+      const heldPath = path.join(lockDir, `${state.slot}.held`);
+      const releasingPath = path.join(lockDir, `${state.slot}.releasing`);
+      const releasePath = path.join(lockDir, `${state.slot}.released`);
+      let lockHandle: Awaited<ReturnType<typeof fs.open>>;
       try {
-        await fs.mkdir(lockPath);
-        try {
-          await fs.writeFile(
-            this.getFirstUserBootstrapLockOwnerPath(),
-            JSON.stringify(owner),
-            { encoding: 'utf8', flag: 'wx', mode: 0o600 },
-          );
-        } catch (error) {
-          await fs.rm(lockPath, { recursive: true, force: true });
-          throw error;
-        }
-        break;
+        lockHandle = await fs.open(ownerPath, 'wx', 0o600);
       } catch (error) {
         if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
-        if (await this.recoverAbandonedFirstUserBootstrapLock()) continue;
-        if (Date.now() >= deadline) {
-          throw new FirstUserBootstrapConflictError(
-            'Timed out acquiring first-user bootstrap storage lock',
-          );
-        }
-        await new Promise((resolve) => setTimeout(resolve, 10));
+        await this.waitForFirstUserBootstrapLock(deadline);
+        continue;
       }
-    }
 
-    try {
-      return await operation();
-    } finally {
-      const currentOwner = await this.readFirstUserBootstrapLockOwner();
-      if (currentOwner?.token !== owner.token || currentOwner.pid !== owner.pid) {
-        throw new FirstUserBootstrapConflictError(
-          'First-user bootstrap lock ownership changed during the operation',
-        );
+      // From this point onward the finally block releases only with a
+      // handle-derived inode identity; otherwise it leaves the path untouched.
+      let ownedStat: { dev: number; ino: number } | undefined;
+      try {
+        ownedStat = await lockHandle.stat();
+        await fs.link(ownerPath, heldPath);
+        if (state.retired) {
+          await this.removeRetiredFirstUserBootstrapLock(state.retired);
+        }
+        await lockHandle.writeFile(JSON.stringify({
+          version: 1,
+          pid: process.pid,
+          token: randomBytes(32).toString('hex'),
+          createdAt: new Date().toISOString(),
+        }), 'utf8');
+        await lockHandle.sync();
+        await this.syncDirectory(lockDir);
+        await this.assertFirstUserBootstrapLockInode(ownerPath, ownedStat);
+        return await operation();
+      } finally {
+        let releaseError: unknown;
+        try {
+          if (!ownedStat) {
+            try {
+              ownedStat = await lockHandle.stat();
+            } catch (error) {
+              releaseError = new FirstUserBootstrapConflictError(
+                `Cannot authenticate first-user bootstrap lock owner for release; ` +
+                `the owner path was left untouched for attended recovery: ${
+                  error instanceof Error ? error.message : String(error)
+                }`,
+              );
+            }
+          }
+          if (ownedStat) {
+            await this.releaseFirstUserBootstrapLock(
+              lockDir,
+              ownerPath,
+              heldPath,
+              releasingPath,
+              releasePath,
+              ownedStat,
+            );
+          }
+        } catch (error) {
+          releaseError ??= error;
+        }
+        try {
+          await lockHandle.close();
+        } catch (error) {
+          releaseError ??= error;
+        }
+        if (releaseError) throw releaseError;
       }
-      await fs.rm(lockPath, { recursive: true, force: false });
     }
   }
 
-  private async readFirstUserBootstrapLockOwner(): Promise<FirstUserBootstrapLockOwner | null> {
+  private getFirstUserBootstrapLockSlotPaths(
+    lockDir: string,
+    slot: FirstUserBootstrapLockSlot,
+  ): {
+    ownerPath: string;
+    heldPath: string;
+    releasingPath: string;
+    releasePath: string;
+  } {
+    return {
+      ownerPath: path.join(lockDir, `${slot}.owner`),
+      heldPath: path.join(lockDir, `${slot}.held`),
+      releasingPath: path.join(lockDir, `${slot}.releasing`),
+      releasePath: path.join(lockDir, `${slot}.released`),
+    };
+  }
+
+  private async lstatFirstUserBootstrapLockPath(
+    filePath: string,
+  ): Promise<Awaited<ReturnType<typeof fs.lstat>> | null> {
     try {
-      const value = JSON.parse(
-        await fs.readFile(this.getFirstUserBootstrapLockOwnerPath(), 'utf8'),
-      ) as Partial<FirstUserBootstrapLockOwner>;
-      if (
-        value.version !== 1 ||
-        !Number.isInteger(value.pid) ||
-        (value.pid as number) <= 0 ||
-        typeof value.token !== 'string' ||
-        value.token.length === 0 ||
-        typeof value.createdAt !== 'string' ||
-        !Number.isFinite(Date.parse(value.createdAt))
-      ) {
-        return null;
-      }
-      return value as FirstUserBootstrapLockOwner;
+      return await fs.lstat(filePath);
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
-      if (error instanceof SyntaxError) return null;
       throw error;
     }
   }
 
-  private isProcessAlive(pid: number): boolean {
+  private async inspectFirstUserBootstrapLock(
+    lockDir: string,
+  ): Promise<FirstUserBootstrapLockState> {
+    const firstSample = await this.sampleFirstUserBootstrapLockSlots(lockDir);
+    const slots = await this.sampleFirstUserBootstrapLockSlots(lockDir);
+    if (!this.firstUserBootstrapLockSamplesMatch(firstSample, slots)) {
+      return { kind: 'retry' };
+    }
+
+    for (const slot of slots) {
+      if (
+        (slot.releaseStat || slot.releasingStat || slot.heldStat) &&
+        !slot.ownerStat
+      ) {
+        return { kind: 'retry' };
+      }
+      if (
+        (slot.ownerStat && !slot.ownerStat.isFile()) ||
+        (slot.heldStat && !slot.heldStat.isFile()) ||
+        (slot.releasingStat && !slot.releasingStat.isFile()) ||
+        (slot.releaseStat && !slot.releaseStat.isFile()) ||
+        (slot.ownerStat &&
+          slot.heldStat &&
+          (slot.ownerStat.dev !== slot.heldStat.dev ||
+            slot.ownerStat.ino !== slot.heldStat.ino)) ||
+        (slot.ownerStat &&
+          slot.releasingStat &&
+          (slot.ownerStat.dev !== slot.releasingStat.dev ||
+            slot.ownerStat.ino !== slot.releasingStat.ino)) ||
+        (slot.ownerStat &&
+          slot.releaseStat &&
+          (slot.ownerStat.dev !== slot.releaseStat.dev ||
+            slot.ownerStat.ino !== slot.releaseStat.ino)) ||
+        (slot.releaseStat && !slot.releasingStat)
+      ) {
+        throw new FirstUserBootstrapConflictError(
+          'First-user bootstrap lock ownership is ambiguous; attended operator recovery required',
+        );
+      }
+    }
+
+    const active = slots.filter((slot) => slot.ownerStat && !slot.releaseStat);
+    const released = slots.filter((slot) => slot.ownerStat && slot.releaseStat);
+    if (active.length === 1) return { kind: 'blocked' };
+    if (active.length > 1 || released.length > 1) {
+      throw new FirstUserBootstrapConflictError(
+        'First-user bootstrap lock slots are ambiguous; attended operator recovery required',
+      );
+    }
+    if (released.length === 0) {
+      return { kind: 'available', slot: 0, retired: null };
+    }
+    const retired = released[0];
+    return {
+      kind: 'available',
+      slot: retired.slot === 0 ? 1 : 0,
+      retired,
+    };
+  }
+
+  private async sampleFirstUserBootstrapLockSlots(
+    lockDir: string,
+  ): Promise<FirstUserBootstrapLockSlotState[]> {
+    return Promise.all(([0, 1] as const).map(async (slot) => {
+      const { ownerPath, heldPath, releasingPath, releasePath } =
+        this.getFirstUserBootstrapLockSlotPaths(lockDir, slot);
+      const [ownerStat, heldStat, releasingStat, releaseStat] = await Promise.all([
+        this.lstatFirstUserBootstrapLockPath(ownerPath),
+        this.lstatFirstUserBootstrapLockPath(heldPath),
+        this.lstatFirstUserBootstrapLockPath(releasingPath),
+        this.lstatFirstUserBootstrapLockPath(releasePath),
+      ]);
+      return {
+        slot,
+        ownerPath,
+        heldPath,
+        releasingPath,
+        releasePath,
+        ownerStat,
+        heldStat,
+        releasingStat,
+        releaseStat,
+      };
+    }));
+  }
+
+  private firstUserBootstrapLockSamplesMatch(
+    first: FirstUserBootstrapLockSlotState[],
+    second: FirstUserBootstrapLockSlotState[],
+  ): boolean {
+    const statMatches = (
+      left: Awaited<ReturnType<typeof fs.lstat>> | null,
+      right: Awaited<ReturnType<typeof fs.lstat>> | null,
+    ): boolean =>
+      left === null || right === null
+        ? left === right
+        : left.dev === right.dev &&
+          left.ino === right.ino &&
+          left.isFile() === right.isFile();
+
+    return first.length === second.length && first.every((left, index) => {
+      const right = second[index];
+      return left.slot === right.slot &&
+        statMatches(left.ownerStat, right.ownerStat) &&
+        statMatches(left.heldStat, right.heldStat) &&
+        statMatches(left.releasingStat, right.releasingStat) &&
+        statMatches(left.releaseStat, right.releaseStat);
+    });
+  }
+
+  private async removeRetiredFirstUserBootstrapLock(
+    retired: FirstUserBootstrapLockSlotState,
+  ): Promise<void> {
+    const [ownerStat, heldStat, releasingStat, releaseStat] = await Promise.all([
+      fs.lstat(retired.ownerPath),
+      this.lstatFirstUserBootstrapLockPath(retired.heldPath),
+      fs.lstat(retired.releasingPath),
+      fs.lstat(retired.releasePath),
+    ]);
+    if (
+      !ownerStat.isFile() ||
+      !releasingStat.isFile() ||
+      !releaseStat.isFile() ||
+      ownerStat.dev !== releasingStat.dev ||
+      ownerStat.ino !== releasingStat.ino ||
+      ownerStat.dev !== releaseStat.dev ||
+      ownerStat.ino !== releaseStat.ino ||
+      (heldStat &&
+        (!heldStat.isFile() ||
+          ownerStat.dev !== heldStat.dev ||
+          ownerStat.ino !== heldStat.ino))
+    ) {
+      throw new FirstUserBootstrapConflictError(
+        'Retired first-user bootstrap lock ownership is ambiguous; attended operator recovery required',
+      );
+    }
+    // The other slot is already this process's active owner. Therefore this
+    // released slot cannot belong to a live owner and is safe to compact.
+    await fs.unlink(retired.ownerPath);
+    await fs.unlink(retired.releasingPath);
+    await fs.unlink(retired.releasePath);
+    if (heldStat) await fs.unlink(retired.heldPath);
+  }
+
+  private async releaseFirstUserBootstrapLock(
+    lockDir: string,
+    ownerPath: string,
+    heldPath: string,
+    releasingPath: string,
+    releasePath: string,
+    ownedStat: { dev: number; ino: number },
+  ): Promise<void> {
     try {
-      process.kill(pid, 0);
-      return true;
+      await this.assertFirstUserBootstrapLockInode(ownerPath, ownedStat);
+    } catch {
+      // A transient verification failure during acquisition must not leave
+      // an active owner. A real replacement fails the confirming check too.
+      await this.assertFirstUserBootstrapLockInode(ownerPath, ownedStat);
+    }
+    let releaseSource = ownerPath;
+    try {
+      await this.assertFirstUserBootstrapLockInode(heldPath, ownedStat);
+      releaseSource = heldPath;
+    } catch {
+      await this.assertFirstUserBootstrapLockInode(ownerPath, ownedStat);
+    }
+    try {
+      await fs.link(releaseSource, releasingPath);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
+      await this.assertFirstUserBootstrapLockInode(releasingPath, ownedStat);
+    }
+    await this.syncDirectory(lockDir);
+    await this.assertFirstUserBootstrapLockInode(ownerPath, ownedStat);
+    await this.assertFirstUserBootstrapLockInode(releasingPath, ownedStat);
+    if (releaseSource === heldPath) {
+      await this.assertFirstUserBootstrapLockInode(heldPath, ownedStat);
+    }
+    // This no-replace hard link is the final release publication. Once it is
+    // visible, contenders may compact the slot, so release performs no more
+    // pathname reads or deletions.
+    await fs.link(releasingPath, releasePath);
+  }
+
+  private async waitForFirstUserBootstrapLock(deadline: number): Promise<void> {
+    const remaining = deadline - Date.now();
+    if (remaining <= 0) {
+      throw new FirstUserBootstrapConflictError(
+        'Timed out acquiring first-user bootstrap storage lock',
+      );
+    }
+    await new Promise((resolve) =>
+      setTimeout(
+        resolve,
+        Math.min(this.config.firstUserBootstrapLockRetryMs, remaining),
+      ),
+    );
+  }
+
+  private async assertFirstUserBootstrapLockInode(
+    filePath: string,
+    ownedStat: { dev: number; ino: number },
+  ): Promise<void> {
+    let pathStat: Awaited<ReturnType<typeof fs.lstat>>;
+    try {
+      pathStat = await fs.lstat(filePath);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+        throw new FirstUserBootstrapConflictError(
+          'First-user bootstrap lock ownership artifact disappeared; operator recovery required',
+        );
+      }
+      throw error;
+    }
+    if (
+      !pathStat.isFile() ||
+      pathStat.dev !== ownedStat.dev ||
+      pathStat.ino !== ownedStat.ino
+    ) {
+      throw new FirstUserBootstrapConflictError(
+        'First-user bootstrap lock ownership changed during the operation; operator recovery required',
+      );
+    }
+  }
+
+  private async syncDirectory(directoryPath: string): Promise<void> {
+    const directory = await fs.open(directoryPath, 'r');
+    try {
+      await directory.sync();
     } catch (error) {
       const code = (error as NodeJS.ErrnoException).code;
-      if (code === 'ESRCH') return false;
-      if (code === 'EPERM') return true;
-      throw error;
+      if (code !== 'EINVAL' && code !== 'ENOTSUP' && code !== 'EBADF') throw error;
+    } finally {
+      await directory.close();
     }
-  }
-
-  private async recoverAbandonedFirstUserBootstrapLock(): Promise<boolean> {
-    const lockPath = this.getFirstUserBootstrapLockPath();
-    const owner = await this.readFirstUserBootstrapLockOwner();
-    if (owner && this.isProcessAlive(owner.pid)) return false;
-    if (!owner) {
-      let stat;
-      try {
-        stat = await fs.stat(lockPath);
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException).code === 'ENOENT') return true;
-        throw error;
-      }
-      if (Date.now() - stat.mtimeMs < UNOWNED_LOCK_RECOVERY_GRACE_MS) {
-        return false;
-      }
-    }
-
-    const abandonedPath = `${lockPath}.abandoned.${process.pid}.${randomBytes(4).toString('hex')}`;
-    try {
-      await fs.rename(lockPath, abandonedPath);
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return true;
-      return false;
-    }
-    await fs.rm(abandonedPath, { recursive: true, force: true });
-    return true;
   }
 
   private async readFirstUserBootstrapRecord(
     tenantId: string,
   ): Promise<FirstUserBootstrapRecord | null> {
-    const value = await this.readJsonFile<unknown | null>(
-      this.getFirstUserBootstrapPath(tenantId),
-      null,
+    const canonicalTenantId = normalizeFirstUserBootstrapTenantId(tenantId);
+    const stored = await this.readOptionalJsonFile<unknown>(
+      this.getFirstUserBootstrapPath(canonicalTenantId),
     );
-    return value === null ? null : parseFirstUserBootstrapRecord(value);
+    if (!stored.exists) return null;
+    return parseFirstUserBootstrapRecord(stored.value, canonicalTenantId);
   }
 
   private async getAllFirstUserBootstrapRecords(): Promise<FirstUserBootstrapRecord[]> {
@@ -494,7 +816,13 @@ export class FileStorageAdapter implements IStorageAdapter {
         path.join(this.getFirstUserBootstrapDir(), entry),
         null,
       );
-      records.push(parseFirstUserBootstrapRecord(value));
+      const record = parseFirstUserBootstrapRecord(value);
+      if (path.basename(this.getFirstUserBootstrapPath(record.tenantId)) !== entry) {
+        throw new FirstUserBootstrapValidationError(
+          'First-user bootstrap record was moved or renamed under another tenant filename',
+        );
+      }
+      records.push(record);
     }
     return records;
   }
@@ -531,19 +859,15 @@ export class FileStorageAdapter implements IStorageAdapter {
   async claimFirstUserBootstrap(
     claim: InertFirstUserClaim,
   ): Promise<InertFirstUserClaim> {
-    if (!isStructurallyValidInertFirstUserClaim(claim)) {
-      throw new FirstUserBootstrapValidationError(
-        'First-user bootstrap claim must be inert',
-      );
-    }
+    const structuralClaim = canonicalizeStructuralInertFirstUserClaim(claim);
 
     return this.withFirstUserBootstrapLock(async () => {
-      const existing = await this.readFirstUserBootstrapRecord(claim.tenantId);
+      const existing = await this.readFirstUserBootstrapRecord(structuralClaim.tenantId);
       if (existing) {
         if (
           existing.status === 'claimed' &&
           firstUserBootstrapValueDigest(existing.claim) ===
-            firstUserBootstrapValueDigest(claim)
+            firstUserBootstrapValueDigest(structuralClaim)
         ) {
           return cloneBootstrapValue(existing.claim);
         }
@@ -558,13 +882,9 @@ export class FileStorageAdapter implements IStorageAdapter {
           );
         }
       }
-      if (!isValidInertFirstUserClaim(claim)) {
-        throw new FirstUserBootstrapValidationError(
-          'Replacement first-user bootstrap claim must be fresh and inert',
-        );
-      }
+      const canonicalClaim = canonicalizeInertFirstUserClaim(structuralClaim);
       const otherRecords = (await this.getAllFirstUserBootstrapRecords()).filter(
-        (record) => record.claim.tenantId !== claim.tenantId,
+        (record) => record.tenantId !== canonicalClaim.tenantId,
       );
       if (otherRecords.length > 0) {
         throw new FirstUserBootstrapConflictError(
@@ -578,13 +898,13 @@ export class FileStorageAdapter implements IStorageAdapter {
       }
       const sessions = await this.readJsonFile<Session[]>(this.getPath('sessions.json'), []);
       const totp = await this.readOptionalJsonFile<EncryptedTOTPSecret>(
-        this.getTotpPath(claim.actor.handle),
+        this.getTotpPath(canonicalClaim.actor.handle),
       );
       const backupCodes = await this.readOptionalJsonFile<BackupCodeSet>(
-        this.getBackupCodesPath(claim.actor.id),
+        this.getBackupCodesPath(canonicalClaim.actor.id),
       );
       if (
-        sessions.some((session) => session.userId === claim.actor.id) ||
+        sessions.some((session) => session.userId === canonicalClaim.actor.id) ||
         (totp.exists && totp.value !== null) ||
         (backupCodes.exists && backupCodes.value !== null)
       ) {
@@ -596,9 +916,13 @@ export class FileStorageAdapter implements IStorageAdapter {
       const record: ClaimedFirstUserBootstrapRecord = {
         version: 1,
         status: 'claimed',
-        claim: cloneBootstrapValue(claim),
+        tenantId: canonicalClaim.tenantId,
+        claim: cloneBootstrapValue(canonicalClaim),
       };
-      await this.writeJsonFileAtomic(this.getFirstUserBootstrapPath(claim.tenantId), record);
+      await this.writeJsonFileAtomic(
+        this.getFirstUserBootstrapPath(canonicalClaim.tenantId),
+        record,
+      );
       return cloneBootstrapValue(record.claim);
     });
   }
@@ -606,18 +930,24 @@ export class FileStorageAdapter implements IStorageAdapter {
   async finalizeFirstUserBootstrap(
     finalization: FirstUserBootstrapFinalization,
   ): Promise<FirstUserBootstrapReceipt> {
+    const payload = canonicalizeFirstUserBootstrapFinalizationPayload(finalization);
     return this.withFirstUserBootstrapLock(async () => {
-      const record = await this.readFirstUserBootstrapRecord(finalization.tenantId);
+      const record = await this.readFirstUserBootstrapRecord(payload.tenantId);
       if (!record) {
         throw new FirstUserBootstrapConflictError(
           'No active first-user bootstrap claim exists for this tenant',
         );
       }
       if (record.status === 'completed') {
+        const canonicalReplay = canonicalizeFirstUserBootstrapFinalization(
+          record.claim,
+          payload,
+          Date.parse(record.initialState.finalizedAt),
+        );
         if (
-          record.receipt.attemptId === finalization.attemptId &&
+          record.receipt.attemptId === canonicalReplay.attemptId &&
           record.receipt.materialDigest ===
-            firstUserBootstrapMaterialDigest(finalization)
+            firstUserBootstrapMaterialDigest(canonicalReplay)
         ) {
           return cloneBootstrapValue(record.receipt);
         }
@@ -626,23 +956,26 @@ export class FileStorageAdapter implements IStorageAdapter {
         );
       }
 
-      assertValidFirstUserBootstrapFinalization(record.claim, finalization);
+      const initialState = canonicalizeFirstUserBootstrapFinalization(
+        record.claim,
+        payload,
+      );
       if ((await this.getAllUsersUnlocked()).length > 0) {
         throw new FirstUserBootstrapConflictError(
           'First-user bootstrap requires an empty user store',
         );
       }
 
-      const initialState = cloneBootstrapValue(finalization);
       const completed: CompletedFirstUserBootstrapRecord = {
         version: 1,
         status: 'completed',
+        tenantId: initialState.tenantId,
         claim: record.claim,
         receipt: createFirstUserBootstrapReceipt(record.claim, initialState),
         initialState,
       };
       await this.writeJsonFileAtomic(
-        this.getFirstUserBootstrapPath(finalization.tenantId),
+        this.getFirstUserBootstrapPath(initialState.tenantId),
         completed,
       );
       return cloneBootstrapValue(completed.receipt);
@@ -652,7 +985,9 @@ export class FileStorageAdapter implements IStorageAdapter {
   async getFirstUserBootstrapReceipt(
     tenantId: string,
   ): Promise<FirstUserBootstrapReceipt | null> {
-    const record = await this.readFirstUserBootstrapRecord(tenantId);
+    const record = await this.readFirstUserBootstrapRecord(
+      normalizeFirstUserBootstrapTenantId(tenantId),
+    );
     return record?.status === 'completed'
       ? cloneBootstrapValue(record.receipt)
       : null;

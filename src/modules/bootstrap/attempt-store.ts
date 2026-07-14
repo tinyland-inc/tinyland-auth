@@ -77,7 +77,7 @@ export class MemoryBootstrapAttemptStore implements BootstrapAttemptStore {
     const key = attemptKey(tenantId, attemptId);
     const attempt = this.attempts.get(key);
     if (!attempt) return null;
-    if (this.now().getTime() >= Date.parse(attempt.expiresAt)) {
+    if (this.now().getTime() > Date.parse(attempt.expiresAt)) {
       this.attempts.delete(key);
       return null;
     }
@@ -90,7 +90,7 @@ export class MemoryBootstrapAttemptStore implements BootstrapAttemptStore {
     const nowMs = this.now().getTime();
     for (const [key, attempt] of this.attempts) {
       if (attempt.tenantId !== tenantId) continue;
-      if (Date.parse(attempt.expiresAt) <= nowMs) {
+      if (Date.parse(attempt.expiresAt) < nowMs) {
         this.attempts.delete(key);
         continue;
       }
@@ -191,6 +191,7 @@ export class MemoryBootstrapAttemptStore implements BootstrapAttemptStore {
 
 export interface BootstrapAttemptStoreConformanceHarness {
   store: BootstrapAttemptStore;
+  now(): Date;
   advanceTime(ms: number): Promise<void>;
   cleanup(): Promise<void>;
 }
@@ -222,8 +223,9 @@ const CONFORMANCE_TENANT = 'bootstrap-attempt-conformance-tenant';
 function createConformanceAttempt(
   attemptId: string,
   actorId: string,
+  nowMs: number,
 ): BootstrapPendingAttempt {
-  const createdAt = new Date().toISOString();
+  const createdAt = new Date(nowMs).toISOString();
   return {
     version: 1,
     tenantId: CONFORMANCE_TENANT,
@@ -240,14 +242,15 @@ function createConformanceAttempt(
       codes: [{ id: 'backup-code-1', hash: 'a'.repeat(64), used: false }],
     },
     createdAt,
-    expiresAt: new Date(Date.now() + 5 * 60 * 1000).toISOString(),
+    expiresAt: new Date(nowMs + 5 * 60 * 1000).toISOString(),
   };
 }
 
 function createConformanceFinalization(
   attempt: BootstrapPendingAttempt,
+  nowMs: number,
 ): FirstUserBootstrapFinalization {
-  const finalizedAt = new Date().toISOString();
+  const finalizedAt = new Date(nowMs).toISOString();
   return {
     version: 1,
     tenantId: attempt.tenantId,
@@ -288,17 +291,47 @@ async function runAttemptStoreCase(
   createHarness: BootstrapAttemptStoreConformanceHarnessFactory,
   test: (
     store: BootstrapAttemptStore,
-    advanceTime: (ms: number) => Promise<void>,
+    clock: BootstrapAttemptStoreConformanceClock,
   ) => Promise<void>,
 ): Promise<BootstrapAttemptStoreConformanceResult> {
   const harness = await createHarness();
   try {
-    await test(harness.store, (ms) => harness.advanceTime(ms));
+    await test(harness.store, {
+      nowMs: () => harnessNowMs(harness),
+      advanceTime: (ms) => advanceHarnessTime(harness, ms),
+    });
     return { name, passed: true };
   } catch (error) {
     throw new BootstrapAttemptStoreConformanceError(name, error);
   } finally {
     await harness.cleanup();
+  }
+}
+
+interface BootstrapAttemptStoreConformanceClock {
+  nowMs(): number;
+  advanceTime(ms: number): Promise<void>;
+}
+
+function harnessNowMs(harness: BootstrapAttemptStoreConformanceHarness): number {
+  const nowMs = harness.now().getTime();
+  if (!Number.isSafeInteger(nowMs)) {
+    throw new Error('Attempt-store harness clock returned an invalid date');
+  }
+  return nowMs;
+}
+
+async function advanceHarnessTime(
+  harness: BootstrapAttemptStoreConformanceHarness,
+  ms: number,
+): Promise<void> {
+  if (!Number.isSafeInteger(ms) || ms < 0) {
+    throw new Error('Attempt-store clock advance must be a non-negative integer');
+  }
+  const before = harnessNowMs(harness);
+  await harness.advanceTime(ms);
+  if (harnessNowMs(harness) !== before + ms) {
+    throw new Error(`Attempt-store harness clock did not advance by exactly ${ms} ms`);
   }
 }
 
@@ -323,15 +356,18 @@ export async function runBootstrapAttemptStoreConformance(
   createHarness: BootstrapAttemptStoreConformanceHarnessFactory,
 ): Promise<BootstrapAttemptStoreConformanceResult[]> {
   return Promise.all([
-    runAttemptStoreCase('one active attempt per tenant', createHarness, async (store) => {
+    runAttemptStoreCase('one active attempt per tenant', createHarness, async (store, clock) => {
+      const nowMs = clock.nowMs();
       const outcomes = await Promise.allSettled([
         store.create(createConformanceAttempt(
           'conformance-attempt-identifier-0001',
           'conformance-actor-0001',
+          nowMs,
         )),
         store.create(createConformanceAttempt(
           'conformance-attempt-identifier-0002',
           'conformance-actor-0002',
+          nowMs,
         )),
       ]);
       assertConformance(
@@ -339,10 +375,11 @@ export async function runBootstrapAttemptStoreConformance(
         'expected exactly one successful create',
       );
     }),
-    runAttemptStoreCase('returned attempts are detached', createHarness, async (store) => {
+    runAttemptStoreCase('returned attempts are detached', createHarness, async (store, clock) => {
       const attempt = createConformanceAttempt(
         'conformance-attempt-identifier-0003',
         'conformance-actor-0003',
+        clock.nowMs(),
       );
       await store.create(attempt);
       const returned = await store.get(attempt.tenantId, attempt.attemptId);
@@ -356,10 +393,11 @@ export async function runBootstrapAttemptStoreConformance(
         'returned attempt mutated server custody',
       );
     }),
-    runAttemptStoreCase('stale profile snapshots conflict', createHarness, async (store) => {
+    runAttemptStoreCase('stale profile snapshots conflict', createHarness, async (store, clock) => {
       const attempt = createConformanceAttempt(
         'conformance-attempt-identifier-0004',
         'conformance-actor-0004',
+        clock.nowMs(),
       );
       await store.create(attempt);
       const stale = await store.get(attempt.tenantId, attempt.attemptId);
@@ -372,7 +410,7 @@ export async function runBootstrapAttemptStoreConformance(
           attempt.tenantId,
           attempt.attemptId,
           bootstrapPendingAttemptDigest(stale),
-          createConformanceFinalization(stale),
+          createConformanceFinalization(stale, clock.nowMs()),
         )),
         'stale finalization was accepted',
       );
@@ -382,23 +420,24 @@ export async function runBootstrapAttemptStoreConformance(
         attempt.tenantId,
         attempt.attemptId,
         bootstrapPendingAttemptDigest(current),
-        createConformanceFinalization(current),
+        createConformanceFinalization(current, clock.nowMs()),
       );
       assertConformance(
         prepared.finalization?.user.bio === 'Latest profile',
         'current profile was not retained in finalization',
       );
     }),
-    runAttemptStoreCase('concurrent exact preparation is idempotent', createHarness, async (store) => {
+    runAttemptStoreCase('concurrent exact preparation is idempotent', createHarness, async (store, clock) => {
       const attempt = createConformanceAttempt(
         'conformance-attempt-identifier-0005',
         'conformance-actor-0005',
+        clock.nowMs(),
       );
       await store.create(attempt);
       const current = await store.get(attempt.tenantId, attempt.attemptId);
       assertConformance(current !== null, 'created attempt is missing');
       const digest = bootstrapPendingAttemptDigest(current);
-      const finalization = createConformanceFinalization(current);
+      const finalization = createConformanceFinalization(current, clock.nowMs());
       const prepared = await Promise.all([
         store.prepareFinalization(
           attempt.tenantId,
@@ -419,11 +458,12 @@ export async function runBootstrapAttemptStoreConformance(
         'concurrent preparation returned different authority',
       );
     }),
-    runAttemptStoreCase('prepared attempts expire and permit replacement', createHarness, async (store, advanceTime) => {
-      const startedAt = Date.now();
+    runAttemptStoreCase('prepared attempts expire and permit replacement', createHarness, async (store, clock) => {
+      const startedAt = clock.nowMs();
       const attempt = createConformanceAttempt(
         'conformance-attempt-identifier-0006',
         'conformance-actor-0006',
+        startedAt,
       );
       attempt.createdAt = new Date(startedAt).toISOString();
       attempt.expiresAt = new Date(startedAt + 5 * 60 * 1000).toISOString();
@@ -434,9 +474,9 @@ export async function runBootstrapAttemptStoreConformance(
         attempt.tenantId,
         attempt.attemptId,
         bootstrapPendingAttemptDigest(current),
-        createConformanceFinalization(current),
+        createConformanceFinalization(current, clock.nowMs()),
       );
-      await advanceTime(6 * 60 * 1000);
+      await clock.advanceTime(6 * 60 * 1000);
       assertConformance(
         (await store.get(attempt.tenantId, attempt.attemptId)) === null,
         'expired prepared attempt remained readable',
@@ -450,13 +490,14 @@ export async function runBootstrapAttemptStoreConformance(
           attempt.tenantId,
           attempt.attemptId,
           bootstrapPendingAttemptDigest(current),
-          createConformanceFinalization(current),
+          createConformanceFinalization(current, clock.nowMs()),
         )),
         'expired prepared attempt accepted another finalization',
       );
       const replacement = createConformanceAttempt(
         'conformance-attempt-identifier-0010',
         'conformance-actor-0010',
+        clock.nowMs(),
       );
       replacement.createdAt = new Date(startedAt + 6 * 60 * 1000).toISOString();
       replacement.expiresAt = new Date(startedAt + 11 * 60 * 1000).toISOString();
@@ -467,10 +508,62 @@ export async function runBootstrapAttemptStoreConformance(
         'replacement attempt did not become active after expiry',
       );
     }),
-    runAttemptStoreCase('delete removes pending credentials', createHarness, async (store) => {
+    runAttemptStoreCase('attempt lifetime includes the exact expiry boundary', createHarness, async (store, clock) => {
+      const startedAt = clock.nowMs();
+      const keyedAttempt = createConformanceAttempt(
+        'conformance-attempt-identifier-0011',
+        'conformance-actor-0011',
+        startedAt,
+      );
+      keyedAttempt.tenantId = `${CONFORMANCE_TENANT}-keyed`;
+      keyedAttempt.createdAt = new Date(startedAt).toISOString();
+      keyedAttempt.expiresAt = new Date(startedAt + 600_000).toISOString();
+      const activeAttempt = createConformanceAttempt(
+        'conformance-attempt-identifier-0012',
+        'conformance-actor-0012',
+        startedAt,
+      );
+      activeAttempt.tenantId = `${CONFORMANCE_TENANT}-active`;
+      activeAttempt.createdAt = new Date(startedAt).toISOString();
+      activeAttempt.expiresAt = new Date(startedAt + 600_000).toISOString();
+      await store.create(keyedAttempt);
+      await store.create(activeAttempt);
+
+      await clock.advanceTime(599_999);
+      assertConformance(
+        (await store.get(keyedAttempt.tenantId, keyedAttempt.attemptId)) !== null,
+        'attempt expired at 599999 ms',
+      );
+      assertConformance(
+        (await store.getActiveForTenant(activeAttempt.tenantId)) !== null,
+        'active attempt expired at 599999 ms',
+      );
+
+      await clock.advanceTime(1);
+      assertConformance(
+        (await store.get(keyedAttempt.tenantId, keyedAttempt.attemptId)) !== null,
+        'attempt expired at the exact 600000 ms boundary',
+      );
+      assertConformance(
+        (await store.getActiveForTenant(activeAttempt.tenantId)) !== null,
+        'active attempt expired at the exact 600000 ms boundary',
+      );
+
+      await clock.advanceTime(1);
+      assertConformance(
+        (await store.get(keyedAttempt.tenantId, keyedAttempt.attemptId)) === null,
+        'attempt remained readable at 600001 ms',
+      );
+      assertConformance(
+        (await store.getActiveForTenant(activeAttempt.tenantId)) === null,
+        'attempt remained active at 600001 ms',
+      );
+    }),
+    runAttemptStoreCase('delete removes pending credentials', createHarness, async (store, clock) => {
       const attempt = createConformanceAttempt(
         'conformance-attempt-identifier-0007',
         'conformance-actor-0007',
+        clock.nowMs(),
       );
       await store.create(attempt);
       assertConformance(
@@ -486,10 +579,11 @@ export async function runBootstrapAttemptStoreConformance(
         'second delete reported a credential record',
       );
     }),
-    runAttemptStoreCase('prepared attempts reject later mutation', createHarness, async (store) => {
+    runAttemptStoreCase('prepared attempts reject later mutation', createHarness, async (store, clock) => {
       const attempt = createConformanceAttempt(
         'conformance-attempt-identifier-0008',
         'conformance-actor-0008',
+        clock.nowMs(),
       );
       await store.create(attempt);
       const current = await store.get(attempt.tenantId, attempt.attemptId);
@@ -498,7 +592,7 @@ export async function runBootstrapAttemptStoreConformance(
         attempt.tenantId,
         attempt.attemptId,
         bootstrapPendingAttemptDigest(current),
-        createConformanceFinalization(current),
+        createConformanceFinalization(current, clock.nowMs()),
       );
       assertConformance(
         await rejects(() => store.updateProfile(
@@ -509,16 +603,17 @@ export async function runBootstrapAttemptStoreConformance(
         'prepared attempt accepted mutable profile data',
       );
     }),
-    runAttemptStoreCase('concurrent different preparation converges', createHarness, async (store) => {
+    runAttemptStoreCase('concurrent different preparation converges', createHarness, async (store, clock) => {
       const attempt = createConformanceAttempt(
         'conformance-attempt-identifier-0009',
         'conformance-actor-0009',
+        clock.nowMs(),
       );
       await store.create(attempt);
       const current = await store.get(attempt.tenantId, attempt.attemptId);
       assertConformance(current !== null, 'created attempt is missing');
       const digest = bootstrapPendingAttemptDigest(current);
-      const first = createConformanceFinalization(current);
+      const first = createConformanceFinalization(current, clock.nowMs());
       const second = cloneBootstrapValue(first);
       second.user.displayName = 'Different Finalization';
       const prepared = await Promise.all([
