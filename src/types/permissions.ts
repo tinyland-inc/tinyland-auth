@@ -34,11 +34,15 @@ export const PERMISSIONS = Object.freeze({
 
 export type AdminPermission = (typeof PERMISSIONS)[keyof typeof PERMISSIONS];
 
-function freezeRecordValues<T extends Record<string, object>>(record: T): T {
+type FrozenRecord<T extends Record<string, object>> = Readonly<{
+  [Key in keyof T]: Readonly<T[Key]>;
+}>;
+
+function freezeRecordValues<T extends Record<string, object>>(record: T): FrozenRecord<T> {
   for (const value of Object.values(record)) {
     Object.freeze(value);
   }
-  return Object.freeze(record) as T;
+  return Object.freeze(record) as FrozenRecord<T>;
 }
 
 // ROLE_PERMISSIONS is the single source of truth for role capabilities.
@@ -47,7 +51,7 @@ function freezeRecordValues<T extends Record<string, object>>(record: T): T {
 // while capabilities are feature-scoped and do NOT nest by rank.
 // Invariant P2 (TIN-2435): every role ranked at or above `member` holds
 // MEMBER_SELF_SERVICE_CORE (the member row) as a floor.
-export const ROLE_PERMISSIONS: Record<AdminRole, string[]> = freezeRecordValues({
+export const ROLE_PERMISSIONS: Readonly<Record<AdminRole, readonly string[]>> = freezeRecordValues({
   super_admin: Object.values(PERMISSIONS),
 
   admin: [
@@ -159,7 +163,7 @@ export type FeatureDomain = (typeof FEATURE_DOMAINS)[number];
 
 // P3 registry (TIN-2435): every permission string that appears in
 // ROLE_PERMISSIONS must appear here, and vice versa.
-export const PERMISSION_FEATURE_DOMAIN: Record<AdminPermission, FeatureDomain> = Object.freeze({
+export const PERMISSION_FEATURE_DOMAIN: Readonly<Record<AdminPermission, FeatureDomain>> = Object.freeze({
   'admin.access': 'access',
   'admin.users.view': 'users',
   'admin.users.manage': 'users',
@@ -195,11 +199,11 @@ export const PERMISSION_FEATURE_DOMAIN: Record<AdminPermission, FeatureDomain> =
 export type RoleAxis = 'governance-spine' | 'specialist';
 
 export interface RoleCharterEntry {
-  axis: RoleAxis;
-  rank: number;
+  readonly axis: RoleAxis;
+  readonly rank: number;
 }
 
-export const ROLE_CHARTER: Record<AdminRole, RoleCharterEntry> = freezeRecordValues({
+export const ROLE_CHARTER: Readonly<Record<AdminRole, Readonly<RoleCharterEntry>>> = freezeRecordValues({
   super_admin: { axis: 'governance-spine', rank: ROLE_HIERARCHY.super_admin },
   admin: { axis: 'governance-spine', rank: ROLE_HIERARCHY.admin },
   moderator: { axis: 'governance-spine', rank: ROLE_HIERARCHY.moderator },

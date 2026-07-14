@@ -12,6 +12,9 @@
   every source role explicitly so same-name realm collisions remain confined,
   and unmapped roles cannot elevate. This is part of the coordinated breaking
   0.8 contract, not an independent release.
+- Empty permission requirements now fail closed: `hasAllPermissions(user, [])`
+  returns `false`, and `requireAllPermissions(user, [])` throws instead of
+  treating an empty boundary as vacuous authorization.
 - Correct the standalone invitation parity claim: invitation 0.2.5 embeds a
   drifted role order. Consumers must inject this package's canonical authority
   until invitation removes its duplicate hierarchy in the coordinated release.
