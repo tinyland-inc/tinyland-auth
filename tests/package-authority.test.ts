@@ -55,12 +55,27 @@ describe('package release authority', () => {
       expect(workflow).toContain('metadata_check_command: pnpm check:release-metadata');
       expect(workflow).toContain('unit_test_command: pnpm test && pnpm test:bazel');
       expect(workflow).toContain(
-        'package_check_command: pnpm check:invitation-authority && pnpm check:package',
+        'package_check_command: pnpm check:invitation-authority && pnpm check:rbac-subpath && pnpm check:package',
       );
       expect(workflow).toContain('bazel_targets: "//:pkg //:test //:typecheck"');
       expect(workflow).toContain('npm_publish_mode: disabled');
       expect(workflow).toContain('github_package_name: "@tinyland-inc/tinyland-auth"');
     }
+  });
+
+  it('proves the built RBAC subpath and its readonly declaration contract', async () => {
+    const packageJson = JSON.parse(await readText('package.json')) as {
+      scripts?: Record<string, string>;
+    };
+    const runtimeProof = await readText('scripts/check-rbac-subpath.mjs');
+    const typeProof = await readText('type-tests/rbac-public-api.ts');
+
+    expect(packageJson.scripts?.['check:rbac-subpath']).toBe(
+      'node scripts/check-rbac-subpath.mjs && tsc -p tsconfig.public-api.json',
+    );
+    expect(runtimeProof).toContain("import('@tummycrypt/tinyland-auth/rbac')");
+    expect(typeProof).toContain("from '@tummycrypt/tinyland-auth/rbac'");
+    expect(typeProof).toContain('@ts-expect-error');
   });
 
   it('executes the Bazel test target instead of only building it', async () => {

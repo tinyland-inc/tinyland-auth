@@ -15,6 +15,13 @@ the other.
 
 Role management uses `ROLE_HIERARCHY` as the source of truth:
 
+The public `./rbac` subpath wraps that table and the capability lattice in the
+frozen, versioned `RBAC_AUTHORITY` contract. Consumers with local role names
+must supply a matching-version `RoleTranslationContract`; unknown, stale,
+inherited, or invalid mappings fail closed. Invitation packages and
+applications must consume or inject this authority rather than copying the
+rank order.
+
 | Rank | Role | Meaning |
 | --- | --- | --- |
 | 100 | `super_admin` | System owner; can manage every lower role. |
@@ -28,7 +35,9 @@ Role management uses `ROLE_HIERARCHY` as the source of truth:
 
 `canManageRole(actor, target)` returns true only when the actor rank is
 strictly greater than the target rank. Equal-rank management is always false.
-Hyphenated role names are normalized to underscore names before lookup.
+Authorization accepts only exact canonical role strings. Case, hyphen, local
+aliases, and malformed persisted values fail closed unless an explicit,
+versioned consumer translation contract maps them.
 
 ## Capability Matrix
 

@@ -25,6 +25,7 @@ scope. It is not the current Tinyland publication authority for this repo.
 - `./sveltekit` — SvelteKit integration: hooks, guards, CSRF, session cookies
 - `./storage` — storage adapter interface + memory/file implementations
 - `./types` — TypeScript type definitions
+- `./rbac` — versioned canonical role/rank/capability authority and translators
 - `./totp` — TOTP generation and verification
 - `./activity` — activity tracking
 - `./audit` — audit logging
@@ -34,9 +35,13 @@ scope. It is not the current Tinyland publication authority for this repo.
 ## Invitation Authority
 
 `@tummycrypt/tinyland-auth` does not export an invitation service or factory.
-Use `@tummycrypt/tinyland-invitation` version `>=0.2.5` for fail-closed
-invitation authorization, minting, acceptance, revocation, and lifecycle
-management, composed with the downstream application that owns user creation.
+Use `@tummycrypt/tinyland-invitation` for invitation minting, acceptance,
+revocation, and lifecycle management, composed with the downstream application
+that owns user creation. Its 0.2.5 embedded role order is not canonical: it
+places `moderator` below `editor` and `event_manager`. Until the coordinated
+TIN-2822 invitation release removes that duplicate authority, consumers must
+inject this package's `canManageRole` policy and must not rely on the invitation
+default.
 
 The type-only `AdminInvitation`, `InvitationConfig`, `InvitationStorage`, and
 invitation request/response DTO exports remain intentionally available, as do
@@ -200,6 +205,21 @@ for the package-owned matrix and downstream test guidance, and
 [the role charter](https://github.com/tinyland-inc/tinyland-auth/blob/main/docs/role-charter.md)
 for the two-axis model and the P1/P2/P3 invariants.
 
+The unreleased 0.8 contract exports `RBAC_AUTHORITY` and
+`RBAC_AUTHORITY_VERSION` from `./rbac`. `tinyland-rbac/1` is the package-owned
+role, rank, capability, charter, and permission-registry authority. The
+referenced tables and rows are frozen at runtime. Unknown roles resolve to no
+permissions and fail every rank check, even if malformed persisted state also
+contains explicit permission strings.
+
+Consumer-local vocabularies use `createRoleTranslationContract()` to copy and
+freeze an exhaustive map against the exact authority version. Without a map,
+`resolveRole()` accepts only exact canonical strings. With a map, every source
+role resolves exclusively through that map, including same-name collisions
+such as a realm-local `viewer`. Stale, forged, inherited, unmapped, and invalid
+values return `null`. Keep app-specific semantics in reviewed consumer maps
+rather than adding local roles to this package.
+
 ### Role x feature charter (operator-ratified 2026-07-04, TIN-2435)
 
 Roles live on two axes: a **governance spine** (`viewer -> member ->
@@ -220,7 +240,9 @@ rank; TIN-1606 precedent).
 | `viewer` | governance-spine | Read-only admin surface. |
 
 Every role at or above `member` holds `MEMBER_SELF_SERVICE_CORE`
-(invariant P2), and every `can*` predicate derives from `ROLE_PERMISSIONS`
--- there are no hand-maintained role arrays. Machine-readable charter:
+(invariant P2), and every role-only predicate in the main permission module
+derives from `ROLE_PERMISSIONS`. Context-aware ownership helpers remain a
+separate policy surface and are not a role-translation authority.
+Machine-readable charter:
 `ROLE_CHARTER` and `PERMISSION_FEATURE_DOMAIN` in
 `src/types/permissions.ts`.

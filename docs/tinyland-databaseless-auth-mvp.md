@@ -30,7 +30,7 @@ corresponds to the released package artifact.
 | --- | --- | --- |
 | Directory actor | application storage adapter | handle-first actor record, optional contact email |
 | Auth capability | `@tummycrypt/tinyland-auth` | sessions, TOTP, backup codes, RBAC checks, storage contracts |
-| Invitation lifecycle | `@tummycrypt/tinyland-invitation >=0.2.5` | fail-closed role authorization, create, list, revoke, and accept invite tokens |
+| Invitation lifecycle | `@tummycrypt/tinyland-invitation` | create, list, revoke, and accept invite tokens; role authority must be injected from the canonical auth contract |
 | Provider identity | app-local adapter | GitHub, future OAuth/OIDC providers, bootstrap/link policy |
 | Client evidence | `@tummycrypt/tinyland-fingerprint` plus app client code | FingerprintJS visitor evidence and consent state |
 | Overlay evidence | `@tummycrypt/tinyland-otel` plus app server code | Tempo/TraceQL restore and investigation plane |
@@ -85,13 +85,17 @@ import {
 The executable auth MVP intentionally stops before invitation acceptance. It
 does not define an invitation handoff, assign an invitation role, or create a
 user from caller-supplied invitation data. Real create/accept/user-create proof
-belongs to `@tummycrypt/tinyland-invitation >=0.2.5` composed in a downstream
+belongs to `@tummycrypt/tinyland-invitation` composed in a downstream
 clean-consumer integration that resolves both package surfaces without a
 workspace or vendored fallback.
 
-Version `0.2.5` is the minimum invitation authority because it supplies the
-fail-closed role gate and claim-first acceptance ordering. Its per-token
-acceptance lock is process-local: it serializes acceptance only
+Version `0.2.5` supplies claim-first acceptance ordering, but its embedded role
+order is not canonical: it places `moderator` below `editor` and
+`event_manager`. It is therefore lifecycle authority, not the accepted RBAC
+authority. Until the coordinated TIN-2822 release removes that duplicate
+hierarchy, consumers must inject the exact auth-owned role policy and must not
+rely on the invitation default. Its per-token acceptance lock is process-local:
+it serializes acceptance only
 within one Node.js process. It is not a distributed or cross-replica
 compare-and-set. Distributed exactly-once acceptance remains open until shared
 storage can atomically claim a token.
@@ -123,8 +127,9 @@ The downstream app should add tests that prove:
 
 - login and session validation do not require a fingerprint
 - changed fingerprints do not invalidate valid sessions
-- clean-consumer invitation tests use `@tummycrypt/tinyland-invitation >=0.2.5`
-  as their only mint/accept authority and preserve its fail-closed role gate
+- clean-consumer invitation tests use `@tummycrypt/tinyland-invitation` as
+  their only mint/accept lifecycle and inject the exact auth-owned RBAC
+  authority instead of relying on the 0.2.5 default hierarchy
 - distributed consumers do not claim exactly-once invite acceptance without a
   storage-backed compare-and-set
 - GitHub OAuth creates a package session only after app-local provider checks

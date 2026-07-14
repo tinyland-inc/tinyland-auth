@@ -40,6 +40,7 @@ export {
   AuthErrorCode,
   isAdminUser,
   isValidAdminRole,
+  resolveCanonicalRole,
   hasHigherRole,
   hasEqualOrHigherRole,
   DEFAULT_AUTH_CONFIG,
@@ -52,6 +53,15 @@ export {
   ROLE_CHARTER,
   VALIDATION_RULES,
 } from './types/index.js';
+
+export {
+  RBAC_AUTHORITY_VERSION,
+  RBAC_AUTHORITY,
+  createRoleTranslationContract,
+  resolveRole,
+  canManageResolvedRole,
+  type RoleTranslationContract,
+} from './rbac/index.js';
 
 
 export type {

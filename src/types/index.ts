@@ -14,6 +14,7 @@ export {
   AuthErrorCode,
   isAdminUser,
   isValidAdminRole,
+  resolveCanonicalRole,
   hasHigherRole,
   hasEqualOrHigherRole,
 } from './auth.js';

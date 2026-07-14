@@ -97,7 +97,7 @@ describe('Permission Functions', () => {
         }
       }
 
-      expect(canManageRole('super-admin', 'event-manager')).toBe(true);
+      expect(canManageRole('super-admin', 'event-manager')).toBe(false);
       expect(canManageRole('editor', 'moderator')).toBe(false);
       expect(canManageRole('moderator', 'editor')).toBe(true);
       expect(canManageRole('admin', 'owner')).toBe(false);

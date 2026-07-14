@@ -47,11 +47,13 @@ describe('invitation service is not on the public surface (TIN-2780)', () => {
     const normalizedMvpDoc = mvpDoc.replace(/\s+/g, ' ');
 
     expect(example).not.toMatch(/invitation|invite|invited/i);
-    expect(mvpDoc).toContain('`@tummycrypt/tinyland-invitation >=0.2.5`');
+    expect(normalizedMvpDoc).toContain('embedded role order is not canonical');
+    expect(normalizedMvpDoc).toContain('inject the exact auth-owned role policy');
     expect(normalizedMvpDoc).toContain('downstream clean-consumer integration');
     expect(mvpDoc).toContain('lock is process-local');
     expect(mvpDoc).toContain('distributed or cross-replica');
-    expect(readme).toContain('version `>=0.2.5`');
+    expect(readme).toContain('0.2.5 embedded role order is not canonical');
+    expect(readme).toContain('must not rely on the invitation');
     expect(readme).toContain('lock is process-local');
   });
 });

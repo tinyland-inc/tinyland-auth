@@ -24,6 +24,10 @@
       "types": "./dist/types/index.d.ts",
       "import": "./dist/types/index.js"
     },
+    "./rbac": {
+      "types": "./dist/rbac/index.d.ts",
+      "import": "./dist/rbac/index.js"
+    },
     "./totp": {
       "types": "./dist/totp/index.d.ts",
       "import": "./dist/totp/index.js"
@@ -52,11 +56,12 @@
   "scripts": {
     "build": "tsc",
     "check:invitation-authority": "node scripts/check-invitation-authority.mjs",
+    "check:rbac-subpath": "node scripts/check-rbac-subpath.mjs && tsc -p tsconfig.public-api.json",
     "check:release-metadata": "node scripts/check-release-metadata.mjs",
     "dev": "tsc --watch",
     "clean": "rm -rf dist",
     "check:package": "publint",
-    "prepublishOnly": "pnpm build && pnpm check:invitation-authority && pnpm check:package",
+    "prepublishOnly": "pnpm build && pnpm check:invitation-authority && pnpm check:rbac-subpath && pnpm check:package",
     "test": "vitest run",
     "test:bazel": "bash scripts/ci-bazel-test.sh",
     "test:coverage": "vitest --coverage",
