@@ -5,6 +5,7 @@ import {
   canonicalizeFirstUserBootstrapClaimResult,
   canonicalizeFirstUserBootstrapFinalizationPayload,
   cloneBootstrapValue,
+  firstUserBootstrapMaterialDigest,
   firstUserBootstrapValueDigest,
   normalizeFirstUserBootstrapTenantId,
   parseFirstUserBootstrapReceipt,
@@ -181,6 +182,24 @@ function createMaterial(
   };
 }
 
+function createOrdinaryUser(
+  handle: string,
+  nowMs: number,
+): Omit<FirstUserBootstrapFinalization['user'], 'id'> {
+  const timestamp = new Date(nowMs).toISOString();
+  return {
+    handle,
+    passwordHash: SYNTHETIC_BCRYPT_HASH,
+    totpEnabled: false,
+    role: 'member',
+    isActive: true,
+    needsOnboarding: false,
+    onboardingStep: 0,
+    createdAt: timestamp,
+    updatedAt: timestamp,
+  };
+}
+
 interface FirstUserBootstrapConformanceClock {
   nowMs(): number;
   advanceTime(ms: number): Promise<void>;
@@ -237,8 +256,10 @@ function runCase(
 }
 
 /**
- * Framework-neutral backend contract runner. PG/Redis adapters can invoke this
- * from any test framework by supplying a fresh, isolated tenant/store harness.
+ * Framework-neutral backend contract runner. It certifies claim/finalize and
+ * the transactionally receipt-gated ordinary `createUser` boundary. PG/Redis
+ * adapters can invoke it from any test framework by supplying a fresh,
+ * isolated tenant/store harness.
  */
 export async function runFirstUserBootstrapStorageConformance(
   createHarness: FirstUserBootstrapConformanceHarnessFactory,
@@ -256,6 +277,19 @@ export async function runFirstUserBootstrapStorageConformance(
     assert(
       outcomes.filter((outcome) => outcome.status === 'fulfilled').length === 1,
       'expected exactly one successful claim',
+    );
+  }));
+
+  cases.push(runCase('ordinary creation cannot create the first user', createHarness, async (storage, tenantId, clock) => {
+    const ordinary = createOrdinaryUser('ordinary_first_user', clock.nowMs());
+    assert(
+      await rejects(() => storage.createUser(ordinary)),
+      'ordinary createUser inserted the first user without bootstrap finalization',
+    );
+    assert(!(await storage.hasUsers()), 'rejected ordinary creation left a user behind');
+    assert(
+      (await readBootstrapReceipt(storage, tenantId)) === null,
+      'rejected ordinary creation forged a bootstrap receipt',
     );
   }));
 
@@ -370,6 +404,26 @@ export async function runFirstUserBootstrapStorageConformance(
     );
   }));
 
+  cases.push(runCase('missing and mismatched claims fail closed', createHarness, async (storage, tenantId, clock) => {
+    const original = createMaterial(tenantId, clock.nowMs());
+    assert(
+      await rejects(() => storage.finalizeFirstUserBootstrap(original.finalization)),
+      'finalization without a stored claim was accepted',
+    );
+
+    await claimBootstrap(storage, original.claim);
+    const competing = createMaterial(tenantId, clock.nowMs());
+    assert(
+      await rejects(() => storage.finalizeFirstUserBootstrap(competing.finalization)),
+      'finalization for a different attempt was accepted',
+    );
+    assert(!(await storage.hasUsers()), 'failed finalization created authority');
+    assert(
+      (await readBootstrapReceipt(storage, tenantId)) === null,
+      'failed finalization persisted a receipt',
+    );
+  }));
+
   cases.push(runCase('canonical digest rejects lossy non-JSON values', createHarness, async () => {
     const accessor = Object.defineProperty({}, 'value', {
       enumerable: true,
@@ -422,6 +476,32 @@ export async function runFirstUserBootstrapStorageConformance(
       firstUserBootstrapValueDigest(receipts[0]) ===
         firstUserBootstrapValueDigest(receipts[1]),
       'concurrent exact finalization returned different receipts',
+    );
+  }));
+
+  cases.push(runCase('concurrent conflicting finalizations have one winner', createHarness, async (storage, tenantId, clock) => {
+    const { claim, finalization } = createMaterial(tenantId, clock.nowMs());
+    const competing = cloneFinalization(finalization);
+    competing.user.displayName = 'Competing Bootstrap Admin';
+    await claimBootstrap(storage, claim);
+
+    const outcomes = await Promise.allSettled([
+      storage.finalizeFirstUserBootstrap(finalization),
+      storage.finalizeFirstUserBootstrap(competing),
+    ]);
+    assert(
+      outcomes.filter((outcome) => outcome.status === 'fulfilled').length === 1,
+      'conflicting finalizations did not produce exactly one winner',
+    );
+    const winner = outcomes[0].status === 'fulfilled' ? finalization : competing;
+    const receipt = await readBootstrapReceipt(storage, tenantId);
+    assert(
+      receipt?.materialDigest === firstUserBootstrapMaterialDigest(winner),
+      'immutable receipt does not identify the winning finalization',
+    );
+    assert(
+      (await storage.getUser(claim.actor.id))?.displayName === winner.user.displayName,
+      'losing finalization changed the committed first user',
     );
   }));
 
@@ -546,6 +626,12 @@ export async function runFirstUserBootstrapStorageConformance(
     const sparseCodes = cloneFinalization(finalization);
     sparseCodes.backupCodes.codes = new Array(2);
     malformed.push(sparseCodes);
+    const browserEvidence = cloneFinalization(finalization);
+    Object.assign(browserEvidence.user as unknown as Record<string, unknown>, {
+      browserFingerprint: 'not-bootstrap-authority',
+      tempoTraceId: 'not-bootstrap-authority',
+    });
+    malformed.push(browserEvidence);
 
     for (const value of malformed) {
       assert(
@@ -587,6 +673,22 @@ export async function runFirstUserBootstrapStorageConformance(
     );
   }));
 
+  cases.push(runCase('consumed claims reject new claim authority', createHarness, async (storage, tenantId, clock) => {
+    const { claim, finalization } = createMaterial(tenantId, clock.nowMs());
+    await claimBootstrap(storage, claim);
+    await finalizeBootstrap(storage, claim, finalization);
+    assert(
+      await rejects(() => storage.claimFirstUserBootstrap(claim)),
+      'a finalized claim was accepted as a new claim',
+    );
+    assert(
+      await rejects(() => storage.claimFirstUserBootstrap(
+        createMaterial(tenantId, clock.nowMs()).claim,
+      )),
+      'a competing claim was accepted after finalization',
+    );
+  }));
+
   cases.push(runCase('bootstrap actors are deletion-protected', createHarness, async (storage, tenantId, clock) => {
     const { claim, finalization } = createMaterial(tenantId, clock.nowMs());
     await claimBootstrap(storage, claim);
@@ -601,19 +703,50 @@ export async function runFirstUserBootstrapStorageConformance(
     );
   }));
 
-  cases.push(runCase('ordinary user deletion revokes sessions', createHarness, async (storage, _tenantId, clock) => {
-    const now = new Date(clock.nowMs()).toISOString();
-    const user = await storage.createUser({
-      handle: `ordinary_${randomUUID().slice(0, 8)}`,
-      passwordHash: SYNTHETIC_BCRYPT_HASH,
-      totpEnabled: false,
-      role: 'member',
-      isActive: true,
-      needsOnboarding: false,
-      onboardingStep: 0,
-      createdAt: now,
-      updatedAt: now,
-    });
+  cases.push(runCase('ordinary creation succeeds after first-user finalization', createHarness, async (storage, tenantId, clock) => {
+    const { claim, finalization } = createMaterial(tenantId, clock.nowMs());
+    await claimBootstrap(storage, claim);
+    await finalizeBootstrap(storage, claim, finalization);
+    const user = await storage.createUser(
+      createOrdinaryUser(`ordinary_${randomUUID().slice(0, 8)}`, clock.nowMs()),
+    );
+    assert(user.id !== claim.actor.id, 'ordinary creation replaced the bootstrap actor');
+    assert((await storage.getUser(user.id))?.id === user.id, 'ordinary user was not persisted');
+  }));
+
+  cases.push(runCase('ordinary creation racing finalization cannot steal first authority', createHarness, async (storage, tenantId, clock) => {
+    const { claim, finalization } = createMaterial(tenantId, clock.nowMs());
+    await claimBootstrap(storage, claim);
+    const ordinary = createOrdinaryUser('racing_ordinary_user', clock.nowMs());
+    const [ordinaryOutcome, finalizationOutcome] = await Promise.allSettled([
+      storage.createUser(ordinary),
+      finalizeBootstrap(storage, claim, finalization),
+    ]);
+
+    assert(finalizationOutcome.status === 'fulfilled', 'ordinary creation prevented bootstrap finalization');
+    assert((await storage.getUser(claim.actor.id))?.role === 'super_admin', 'bootstrap actor did not win first authority');
+    assert(
+      (await readBootstrapReceipt(storage, tenantId, { claim, finalization })) !== null,
+      'bootstrap race completed without its immutable receipt',
+    );
+    const persistedOrdinary = await storage.getUserByHandle(ordinary.handle);
+    if (ordinaryOutcome.status === 'fulfilled') {
+      assert(
+        persistedOrdinary?.id === ordinaryOutcome.value.id,
+        'successful post-bootstrap ordinary creation was not persisted',
+      );
+    } else {
+      assert(persistedOrdinary === null, 'rejected racing ordinary user was partially persisted');
+    }
+  }));
+
+  cases.push(runCase('ordinary user deletion revokes sessions', createHarness, async (storage, tenantId, clock) => {
+    const { claim, finalization } = createMaterial(tenantId, clock.nowMs());
+    await claimBootstrap(storage, claim);
+    await finalizeBootstrap(storage, claim, finalization);
+    const user = await storage.createUser(
+      createOrdinaryUser(`ordinary_${randomUUID().slice(0, 8)}`, clock.nowMs()),
+    );
     const session = await storage.createSession(user.id, user);
     assert(await storage.deleteUser(user.id), 'ordinary user was not deleted');
     assert((await storage.getSession(session.id)) === null, 'user session survived deletion');
@@ -639,15 +772,43 @@ export async function runFirstUserBootstrapStorageConformance(
     );
   }));
 
-  cases.push(runCase('session identity cannot bypass claimed-actor confinement', createHarness, async (storage, tenantId, clock) => {
-    const { claim } = createMaterial(tenantId, clock.nowMs());
+  cases.push(runCase('bootstrap claim revokes pre-bootstrap privileged sessions', createHarness, async (storage, tenantId, clock) => {
+    const { claim, finalization } = createMaterial(tenantId, clock.nowMs());
     const unrelatedUserId = randomUUID();
     const existingSession = await storage.createSession(unrelatedUserId, {
       id: unrelatedUserId,
       handle: 'unrelated_session_actor',
-      role: 'member',
+      role: 'super_admin',
     });
     await claimBootstrap(storage, claim);
+    assert(
+      (await storage.getSession(existingSession.id)) === null,
+      'pre-bootstrap privileged session survived bootstrap claim',
+    );
+    assert(
+      await rejects(() => storage.createSession(unrelatedUserId, {
+        id: unrelatedUserId,
+        role: 'super_admin',
+      })),
+      'privileged session was created while bootstrap was claimed',
+    );
+
+    await finalizeBootstrap(storage, claim, finalization);
+    const postBootstrap = await storage.createSession(claim.actor.id, finalization.user);
+    assert(
+      (await storage.getSession(postBootstrap.id)) !== null,
+      'normal post-bootstrap session was weakened',
+    );
+  }));
+
+  cases.push(runCase('session identity cannot be rebound after bootstrap', createHarness, async (storage, tenantId, clock) => {
+    const { claim, finalization } = createMaterial(tenantId, clock.nowMs());
+    await claimBootstrap(storage, claim);
+    await finalizeBootstrap(storage, claim, finalization);
+    const unrelated = await storage.createUser(
+      createOrdinaryUser(`session_${randomUUID().slice(0, 8)}`, clock.nowMs()),
+    );
+    const existingSession = await storage.createSession(unrelated.id, unrelated);
     assert(
       await rejects(() => storage.createSession('unrelated-user', {
         id: claim.actor.id,
@@ -665,7 +826,7 @@ export async function runFirstUserBootstrapStorageConformance(
       await rejects(() => storage.updateSession(existingSession.id, {
         user: {
           ...(existingSession.user ?? {
-            id: unrelatedUserId,
+            id: unrelated.id,
             username: 'unrelated_session_actor',
             name: 'unrelated_session_actor',
             role: 'member',
@@ -676,13 +837,13 @@ export async function runFirstUserBootstrapStorageConformance(
       'nested session identity was rebound to the claimed actor',
     );
     const returned = await storage.getSession(existingSession.id);
-    assert(returned !== null, 'ordinary session disappeared');
+    assert(returned !== null, 'post-bootstrap session disappeared');
     returned.userId = claim.actor.id;
     if (returned.user) returned.user.id = claim.actor.id;
     const persisted = await storage.getSession(existingSession.id);
     assert(
-      persisted?.userId === unrelatedUserId &&
-        persisted.user?.id === unrelatedUserId,
+      persisted?.userId === unrelated.id &&
+        persisted.user?.id === unrelated.id,
       'returned session alias mutated stored identity',
     );
   }));

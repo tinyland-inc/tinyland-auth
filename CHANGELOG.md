@@ -27,6 +27,10 @@
   ownership state requires attended recovery.
 - Harden user deletion so bootstrap actors cannot be removed and ordinary file
   users are disabled and have sessions revoked before destructive writes.
+- Reconcile persisted 0.7 file stores without bootstrap receipts when exactly
+  one active, unlocked `super_admin` identifies legacy ownership. The adapter
+  atomically records that immutable migration marker before allowing ordinary
+  user creation; missing or ambiguous ownership remains fail-closed.
 - Replace `BootstrapService`'s credential-bearing browser state and composed
   writes with an opaque attempt reference, explicit server-side attempt
   custody, finalized-metadata/decryptability status, encrypted-factor
@@ -37,9 +41,14 @@
   re-discloses pending credentials from receipt replay. A framework-neutral
   attempt-store conformance runner makes those CAS rules reusable. Session
   identity is immutable so an active claim cannot be bypassed by rebinding an
-  old session.
+  old session. Claim acceptance now revokes every pre-bootstrap session and
+  blocks new sessions until finalization; role and permission guards require a
+  matching storage-loaded user instead of trusting an embedded session role.
   TOTP verification accepts synchronous or asynchronous verifiers, awaits the
   result, and requires the exact value `true`; verifier rejection fails closed.
+  A delayed exact `complete()` racing a winner re-reads the immutable receipt
+  after asynchronous verification/encryption and replays the committed success
+  even when the winner already deleted attempt custody.
   Downstream initiation remains operator-only and must be protected by a local
   or private administrative gate.
   This is a breaking, source-only 0.8 contract. It does not claim a 0.8

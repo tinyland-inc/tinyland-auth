@@ -86,6 +86,22 @@ or root per tenant. Future multi-tenant durable backends must scope the same
 protocol by the tenant argument required by `TenantScopedStorage`. The current
 PG/Redis releases do not implement or support this unreleased 0.8 surface.
 
+Accepting a first-user claim revokes every session already present in that
+single-tenant boundary, and session creation remains disabled until
+finalization. After finalization, normal sessions are unchanged. SvelteKit role
+and permission guards use the matching `event.locals.user` loaded from storage,
+not an embedded session role by itself, so a pre-bootstrap session cannot retain
+privileged authority through a stale role claim.
+
+For a real 0.7 file root that already has users but no bootstrap receipt,
+`createUser` performs a one-time reconciliation before adding the next user.
+The legacy root must contain exactly one active, unlocked `super_admin`; zero or
+multiple candidates fail closed. The file adapter atomically publishes an
+immutable reconciliation marker under `totpDir`, protects that owner's user
+record from deletion, and then permits ordinary user creation (including the
+storage step used by invitation acceptance). A legacy marker is not a forged
+0.8 bootstrap receipt, and ambiguous legacy ownership requires operator repair.
+
 `FileStorageAdapter.getFirstUserBootstrapPath(tenantId)` always resolves below
 the configured `totpDir`. Completion uses a constant-space two-slot lock and
 atomic record rename. A winner atomically creates one owner; release stages and

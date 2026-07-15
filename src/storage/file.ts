@@ -59,6 +59,17 @@ type FirstUserBootstrapRecord =
   | ClaimedFirstUserBootstrapRecord
   | CompletedFirstUserBootstrapRecord;
 
+interface LegacyFirstUserBootstrapReconciliation {
+  version: 1;
+  status: 'legacy-reconciled';
+  sourceVersion: '0.7';
+  owner: {
+    id: string;
+    handle: string;
+  };
+  reconciledAt: string;
+}
+
 type FirstUserBootstrapLockSlot = 0 | 1;
 
 interface FirstUserBootstrapLockSlotState {
@@ -90,6 +101,54 @@ function hasExactKeys(value: Record<string, unknown>, keys: readonly string[]): 
   const actual = Object.keys(value).sort();
   const expected = [...keys].sort();
   return actual.length === expected.length && actual.every((key, index) => key === expected[index]);
+}
+
+function parseLegacyFirstUserBootstrapReconciliation(
+  value: unknown,
+): LegacyFirstUserBootstrapReconciliation {
+  if (
+    !isRecord(value) ||
+    !hasExactKeys(value, [
+      'version',
+      'status',
+      'sourceVersion',
+      'owner',
+      'reconciledAt',
+    ]) ||
+    value.version !== 1 ||
+    value.status !== 'legacy-reconciled' ||
+    value.sourceVersion !== '0.7' ||
+    !isRecord(value.owner) ||
+    !hasExactKeys(value.owner, ['id', 'handle']) ||
+    typeof value.owner.id !== 'string' ||
+    !/^[A-Za-z0-9][A-Za-z0-9._:-]*$/.test(value.owner.id) ||
+    typeof value.owner.handle !== 'string' ||
+    !/^[a-zA-Z][a-zA-Z0-9_-]{2,29}$/.test(value.owner.handle) ||
+    typeof value.reconciledAt !== 'string'
+  ) {
+    throw new FirstUserBootstrapValidationError(
+      'Corrupted legacy first-user bootstrap reconciliation marker',
+    );
+  }
+  const reconciledAt = Date.parse(value.reconciledAt);
+  if (
+    !Number.isFinite(reconciledAt) ||
+    new Date(reconciledAt).toISOString() !== value.reconciledAt
+  ) {
+    throw new FirstUserBootstrapValidationError(
+      'Corrupted legacy first-user bootstrap reconciliation timestamp',
+    );
+  }
+  return {
+    version: 1,
+    status: 'legacy-reconciled',
+    sourceVersion: '0.7',
+    owner: {
+      id: value.owner.id,
+      handle: value.owner.handle,
+    },
+    reconciledAt: value.reconciledAt,
+  };
 }
 
 function parseFirstUserBootstrapRecord(
@@ -314,6 +373,14 @@ export class FileStorageAdapter implements IStorageAdapter {
 
   private getFirstUserBootstrapLockDir(): string {
     return path.resolve(this.basePath, this.config.totpDir, '.first-user-bootstrap.lock');
+  }
+
+  private getLegacyFirstUserBootstrapReconciliationPath(): string {
+    return path.resolve(
+      this.basePath,
+      this.config.totpDir,
+      'first-user-bootstrap-v0.7-reconciliation.json',
+    );
   }
 
   private async ensureDir(filePath: string): Promise<void> {
@@ -800,6 +867,16 @@ export class FileStorageAdapter implements IStorageAdapter {
     return parseFirstUserBootstrapRecord(stored.value, canonicalTenantId);
   }
 
+  private async readLegacyFirstUserBootstrapReconciliation(): Promise<
+    LegacyFirstUserBootstrapReconciliation | null
+  > {
+    const stored = await this.readOptionalJsonFile<unknown>(
+      this.getLegacyFirstUserBootstrapReconciliationPath(),
+    );
+    if (!stored.exists) return null;
+    return parseLegacyFirstUserBootstrapReconciliation(stored.value);
+  }
+
   private async getAllFirstUserBootstrapRecords(): Promise<FirstUserBootstrapRecord[]> {
     let entries: string[];
     try {
@@ -843,6 +920,76 @@ export class FileStorageAdapter implements IStorageAdapter {
     return this.readJsonFile<AdminUser[]>(this.getPath('admin-users.json'), []);
   }
 
+  private selectLegacyFirstUserOwner(users: AdminUser[]): AdminUser {
+    const ids = new Set<string>();
+    const handles = new Set<string>();
+    for (const user of users) {
+      if (
+        !isRecord(user) ||
+        typeof user.id !== 'string' ||
+        user.id.length === 0 ||
+        typeof user.handle !== 'string' ||
+        user.handle.length === 0
+      ) {
+        throw new FirstUserBootstrapValidationError(
+          'Legacy 0.7 user storage contains an invalid identity',
+        );
+      }
+      const handle = user.handle.toLowerCase();
+      if (ids.has(user.id) || handles.has(handle)) {
+        throw new FirstUserBootstrapConflictError(
+          'Legacy 0.7 user storage contains duplicate identities',
+        );
+      }
+      ids.add(user.id);
+      handles.add(handle);
+    }
+
+    const owners = users.filter(
+      (user) =>
+        user.role === 'super_admin' &&
+        user.isActive === true &&
+        user.isLocked !== true,
+    );
+    if (owners.length !== 1) {
+      throw new FirstUserBootstrapConflictError(
+        'Legacy 0.7 reconciliation requires exactly one active super_admin owner',
+      );
+    }
+    return owners[0];
+  }
+
+  private async ensureLegacyFirstUserBootstrapReconciliation(
+    users: AdminUser[],
+  ): Promise<LegacyFirstUserBootstrapReconciliation> {
+    const existing = await this.readLegacyFirstUserBootstrapReconciliation();
+    if (existing) {
+      if (!users.some((user) => user.id === existing.owner.id)) {
+        throw new FirstUserBootstrapConflictError(
+          'Legacy first-user bootstrap owner is missing from user storage',
+        );
+      }
+      return existing;
+    }
+
+    const owner = this.selectLegacyFirstUserOwner(users);
+    const marker = parseLegacyFirstUserBootstrapReconciliation({
+      version: 1,
+      status: 'legacy-reconciled',
+      sourceVersion: '0.7',
+      owner: {
+        id: owner.id,
+        handle: owner.handle,
+      },
+      reconciledAt: new Date().toISOString(),
+    });
+    await this.writeJsonFileAtomic(
+      this.getLegacyFirstUserBootstrapReconciliationPath(),
+      marker,
+    );
+    return marker;
+  }
+
   private async getAllUsersUnlocked(): Promise<AdminUser[]> {
     const users = new Map<string, AdminUser>();
     for (const record of await this.getAllFirstUserBootstrapRecords()) {
@@ -862,6 +1009,11 @@ export class FileStorageAdapter implements IStorageAdapter {
     const structuralClaim = canonicalizeStructuralInertFirstUserClaim(claim);
 
     return this.withFirstUserBootstrapLock(async () => {
+      if (await this.readLegacyFirstUserBootstrapReconciliation()) {
+        throw new FirstUserBootstrapConflictError(
+          'First-user bootstrap authority was reconciled from a legacy 0.7 store',
+        );
+      }
       const existing = await this.readFirstUserBootstrapRecord(structuralClaim.tenantId);
       if (existing) {
         if (
@@ -869,6 +1021,7 @@ export class FileStorageAdapter implements IStorageAdapter {
           firstUserBootstrapValueDigest(existing.claim) ===
             firstUserBootstrapValueDigest(structuralClaim)
         ) {
+          await this.writeJsonFileAtomic(this.getPath('sessions.json'), []);
           return cloneBootstrapValue(existing.claim);
         }
         if (existing.status === 'completed') {
@@ -904,12 +1057,11 @@ export class FileStorageAdapter implements IStorageAdapter {
         this.getBackupCodesPath(canonicalClaim.actor.id),
       );
       if (
-        sessions.some((session) => session.userId === canonicalClaim.actor.id) ||
         (totp.exists && totp.value !== null) ||
         (backupCodes.exists && backupCodes.value !== null)
       ) {
         throw new FirstUserBootstrapConflictError(
-          'Claimed actor already has session or factor state',
+          'Claimed actor already has factor state',
         );
       }
 
@@ -919,6 +1071,9 @@ export class FileStorageAdapter implements IStorageAdapter {
         tenantId: canonicalClaim.tenantId,
         claim: cloneBootstrapValue(canonicalClaim),
       };
+      if (sessions.length > 0) {
+        await this.writeJsonFileAtomic(this.getPath('sessions.json'), []);
+      }
       await this.writeJsonFileAtomic(
         this.getFirstUserBootstrapPath(canonicalClaim.tenantId),
         record,
@@ -1020,7 +1175,25 @@ export class FileStorageAdapter implements IStorageAdapter {
           'Cannot create a user while a first-user bootstrap claim is active',
         );
       }
+      const completedRecords = records.filter(
+        (record) => record.status === 'completed',
+      );
       const users = await this.readCurrentUsers();
+      const legacyReconciliation =
+        await this.readLegacyFirstUserBootstrapReconciliation();
+      if (completedRecords.length === 1) {
+        if (legacyReconciliation) {
+          throw new FirstUserBootstrapConflictError(
+            'File storage contains conflicting bootstrap and legacy ownership records',
+          );
+        }
+      } else if (completedRecords.length === 0 && users.length > 0) {
+        await this.ensureLegacyFirstUserBootstrapReconciliation(users);
+      } else {
+        throw new FirstUserBootstrapConflictError(
+          'Ordinary user creation requires a finalized first-user bootstrap receipt',
+        );
+      }
       const user: AdminUser = {
         id: randomUUID(),
         ...userData,
@@ -1059,6 +1232,13 @@ export class FileStorageAdapter implements IStorageAdapter {
 
   async deleteUser(id: string): Promise<boolean> {
     return this.withFirstUserBootstrapLock(async () => {
+      const legacyReconciliation =
+        await this.readLegacyFirstUserBootstrapReconciliation();
+      if (legacyReconciliation?.owner.id === id) {
+        throw new FirstUserBootstrapConflictError(
+          'Cannot delete a legacy-reconciled first-user owner',
+        );
+      }
       const bootstrapRecord = await this.getBootstrapRecordForActor(id);
       if (bootstrapRecord) {
         throw new FirstUserBootstrapConflictError(
@@ -1116,10 +1296,11 @@ export class FileStorageAdapter implements IStorageAdapter {
           'Session user identity does not match userId',
         );
       }
-      const bootstrapRecord = await this.getBootstrapRecordForActor(userId);
-      if (bootstrapRecord?.status === 'claimed') {
+      const hasActiveBootstrapClaim = (await this.getAllFirstUserBootstrapRecords())
+        .some((record) => record.status === 'claimed');
+      if (hasActiveBootstrapClaim) {
         throw new FirstUserBootstrapConflictError(
-          'Claimed first-user actor has no session authority before finalization',
+          'session authority is unavailable while first-user bootstrap is claimed',
         );
       }
       const sessions = await this.readJsonFile<Session[]>(this.getPath('sessions.json'), []);
@@ -1191,22 +1372,26 @@ export class FileStorageAdapter implements IStorageAdapter {
   }
 
   async deleteSession(id: string): Promise<boolean> {
-    const sessions = await this.readJsonFile<Session[]>(this.getPath('sessions.json'), []);
-    const index = sessions.findIndex(s => s.id === id);
+    return this.withFirstUserBootstrapLock(async () => {
+      const sessions = await this.readJsonFile<Session[]>(this.getPath('sessions.json'), []);
+      const index = sessions.findIndex(s => s.id === id);
 
-    if (index === -1) return false;
+      if (index === -1) return false;
 
-    sessions.splice(index, 1);
-    await this.writeJsonFile(this.getPath('sessions.json'), sessions);
-    return true;
+      sessions.splice(index, 1);
+      await this.writeJsonFileAtomic(this.getPath('sessions.json'), sessions);
+      return true;
+    });
   }
 
   async deleteUserSessions(userId: string): Promise<number> {
-    const sessions = await this.readJsonFile<Session[]>(this.getPath('sessions.json'), []);
-    const before = sessions.length;
-    const filtered = sessions.filter(s => s.userId !== userId);
-    await this.writeJsonFile(this.getPath('sessions.json'), filtered);
-    return before - filtered.length;
+    return this.withFirstUserBootstrapLock(async () => {
+      const sessions = await this.readJsonFile<Session[]>(this.getPath('sessions.json'), []);
+      const before = sessions.length;
+      const filtered = sessions.filter(s => s.userId !== userId);
+      await this.writeJsonFileAtomic(this.getPath('sessions.json'), filtered);
+      return before - filtered.length;
+    });
   }
 
   async getSessionsByUser(userId: string): Promise<Session[]> {
@@ -1215,12 +1400,14 @@ export class FileStorageAdapter implements IStorageAdapter {
   }
 
   async cleanupExpiredSessions(): Promise<number> {
-    const sessions = await this.readJsonFile<Session[]>(this.getPath('sessions.json'), []);
-    const now = new Date();
-    const before = sessions.length;
-    const filtered = sessions.filter(s => new Date(s.expires) > now);
-    await this.writeJsonFile(this.getPath('sessions.json'), filtered);
-    return before - filtered.length;
+    return this.withFirstUserBootstrapLock(async () => {
+      const sessions = await this.readJsonFile<Session[]>(this.getPath('sessions.json'), []);
+      const now = new Date();
+      const before = sessions.length;
+      const filtered = sessions.filter(s => new Date(s.expires) > now);
+      await this.writeJsonFileAtomic(this.getPath('sessions.json'), filtered);
+      return before - filtered.length;
+    });
   }
 
   

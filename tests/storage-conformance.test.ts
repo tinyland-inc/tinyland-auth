@@ -1,6 +1,7 @@
 import { promises as fs } from 'fs';
 import os from 'os';
 import path from 'path';
+import { fileURLToPath } from 'url';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { FileStorageAdapter } from '../src/storage/file.js';
 import { MemoryStorageAdapter } from '../src/storage/memory.js';
@@ -13,6 +14,7 @@ import {
   type InertFirstUserClaim,
 } from '../src/storage/firstUserBootstrap.js';
 import type { IStorageAdapter } from '../src/storage/interface.js';
+import type { AdminUser } from '../src/types/auth.js';
 import {
   describeStorageConformance,
   makeClaim,
@@ -21,6 +23,65 @@ import {
 
 const TENANT = '12345678-1234-4123-8123-123456789abc';
 const CONFORMANCE_CLOCK_ORIGIN_MS = Date.parse('2040-01-02T03:04:05.000Z');
+const LEGACY_FILE_FIXTURE = fileURLToPath(
+  new URL('./fixtures/legacy-0.7-file-store', import.meta.url),
+);
+
+const FILE_SESSION_MUTATIONS: Array<{
+  name: string;
+  expireTarget?: boolean;
+  run: (
+    storage: FileStorageAdapter,
+    targetSessionId: string,
+    targetUserId: string,
+  ) => Promise<unknown>;
+}> = [
+  {
+    name: 'deleteSession',
+    run: (storage, targetSessionId) => storage.deleteSession(targetSessionId),
+  },
+  {
+    name: 'deleteUserSessions',
+    run: (storage, _targetSessionId, targetUserId) =>
+      storage.deleteUserSessions(targetUserId),
+  },
+  {
+    name: 'cleanupExpiredSessions',
+    expireTarget: true,
+    run: (storage) => storage.cleanupExpiredSessions(),
+  },
+];
+
+function makeLegacyInvitee(handle: string): Omit<AdminUser, 'id'> {
+  const timestamp = new Date().toISOString();
+  return {
+    handle,
+    passwordHash: `$2b$12$${'C'.repeat(53)}`,
+    totpEnabled: false,
+    role: 'member',
+    isActive: true,
+    needsOnboarding: false,
+    onboardingStep: 0,
+    createdAt: timestamp,
+    updatedAt: timestamp,
+  };
+}
+
+async function copyLegacyFileFixture(label: string): Promise<{
+  root: string;
+  authDir: string;
+  totpDir: string;
+}> {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), label));
+  const storeRoot = path.join(root, 'store');
+  await fs.cp(LEGACY_FILE_FIXTURE, storeRoot, { recursive: true });
+  await fs.chmod(path.join(storeRoot, 'auth', 'admin-users.json'), 0o600);
+  return {
+    root,
+    authDir: path.join(storeRoot, 'auth'),
+    totpDir: path.join(storeRoot, 'totp'),
+  };
+}
 
 function clockControlledHarness(
   storage: IStorageAdapter,
@@ -46,6 +107,7 @@ function overrideBootstrapBoundary(
     | 'claimFirstUserBootstrap'
     | 'finalizeFirstUserBootstrap'
     | 'getFirstUserBootstrapReceipt'
+    | 'createUser'
   >>,
 ): IStorageAdapter {
   return new Proxy(storage, {
@@ -141,6 +203,108 @@ describe('FileStorageAdapter first-user bootstrap custody', () => {
       await fs.rm(root, { recursive: true, force: true });
     }
   });
+
+  it.each(FILE_SESSION_MUTATIONS)(
+    'serializes $name with bootstrap session revocation',
+    async ({ name, expireTarget, run }) => {
+      const root = await fs.mkdtemp(path.join(os.tmpdir(), `tinyland-auth-${name}-race-`));
+      const config = {
+        authDir: path.join(root, 'auth'),
+        totpDir: path.join(root, 'totp'),
+        firstUserBootstrapLockTimeoutMs: 2000,
+        firstUserBootstrapLockRetryMs: 1,
+      };
+      const mutator = new FileStorageAdapter(config);
+      const claimer = new FileStorageAdapter(config);
+      const verifier = new FileStorageAdapter(config);
+      await Promise.all([mutator.init(), claimer.init(), verifier.init()]);
+
+      type SessionRaceInternals = {
+        readJsonFile<T>(filePath: string, defaultValue: T): Promise<T>;
+        waitForFirstUserBootstrapLock(deadline: number): Promise<void>;
+      };
+      const mutatorInternals = mutator as unknown as SessionRaceInternals;
+      const claimerInternals = claimer as unknown as SessionRaceInternals;
+      const originalRead = mutatorInternals.readJsonFile.bind(mutatorInternals);
+      const originalWait = claimerInternals.waitForFirstUserBootstrapLock.bind(claimerInternals);
+      const sessionsPath = path.resolve(config.authDir, 'sessions.json');
+      let signalSnapshotRead!: () => void;
+      const snapshotRead = new Promise<void>((resolve) => { signalSnapshotRead = resolve; });
+      let releaseSnapshot!: () => void;
+      const snapshotGate = new Promise<void>((resolve) => { releaseSnapshot = resolve; });
+      let signalClaimWait!: () => void;
+      const claimWait = new Promise<void>((resolve) => { signalClaimWait = resolve; });
+      let staleSessionCount = -1;
+      let armed = false;
+      let paused = false;
+      mutatorInternals.readJsonFile = async <T>(
+        filePath: string,
+        defaultValue: T,
+      ): Promise<T> => {
+        const value = await originalRead(filePath, defaultValue);
+        if (armed && !paused && path.resolve(filePath) === sessionsPath) {
+          paused = true;
+          staleSessionCount = Array.isArray(value) ? value.length : -1;
+          signalSnapshotRead();
+          await snapshotGate;
+        }
+        return value;
+      };
+      claimerInternals.waitForFirstUserBootstrapLock = async (deadline) => {
+        signalClaimWait();
+        await originalWait(deadline);
+      };
+
+      let mutationPromise: Promise<unknown> | undefined;
+      let claimPromise: Promise<InertFirstUserClaim> | undefined;
+      try {
+        const targetUserId = `pre-claim-target-${name}`;
+        const survivorUserId = `pre-claim-survivor-${name}`;
+        const target = await mutator.createSession(targetUserId, {
+          id: targetUserId,
+          handle: 'pre_claim_target',
+          role: 'super_admin',
+        });
+        await mutator.createSession(survivorUserId, {
+          id: survivorUserId,
+          handle: 'pre_claim_survivor',
+          role: 'super_admin',
+        });
+        if (expireTarget) {
+          await mutator.updateSession(target.id, {
+            expires: '2000-01-01T00:00:00.000Z',
+          });
+        }
+
+        armed = true;
+        mutationPromise = run(mutator, target.id, targetUserId);
+        await snapshotRead;
+        expect(staleSessionCount).toBe(2);
+
+        claimPromise = claimer.claimFirstUserBootstrap(makeClaim());
+        const claimOrder = await Promise.race([
+          claimPromise.then(() => 'completed-before-mutation' as const),
+          claimWait.then(() => 'blocked-by-mutation' as const),
+        ]);
+        releaseSnapshot();
+        await Promise.all([mutationPromise, claimPromise]);
+
+        expect(await verifier.getFirstUserBootstrapReceipt(TENANT)).toBeNull();
+        expect(await verifier.getAllSessions()).toEqual([]);
+        expect(claimOrder).toBe('blocked-by-mutation');
+      } finally {
+        releaseSnapshot();
+        await Promise.allSettled([
+          ...(mutationPromise ? [mutationPromise] : []),
+          ...(claimPromise ? [claimPromise] : []),
+        ]);
+        mutatorInternals.readJsonFile = originalRead;
+        claimerInternals.waitForFirstUserBootstrapLock = originalWait;
+        await Promise.all([mutator.close(), claimer.close(), verifier.close()]);
+        await fs.rm(root, { recursive: true, force: true });
+      }
+    },
+  );
 
   it('keeps bootstrap state under totpDir and fails closed on corruption', async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), 'tinyland-auth-custody-'));
@@ -757,6 +921,90 @@ describe('FileStorageAdapter first-user bootstrap custody', () => {
   });
 });
 
+describe('FileStorageAdapter 0.7 migration reconciliation', () => {
+  it('atomically reconciles one legacy owner before invitation user creation', async () => {
+    const fixture = await copyLegacyFileFixture('tinyland-auth-legacy-v07-');
+    const config = { authDir: fixture.authDir, totpDir: fixture.totpDir };
+    const markerPath = path.join(
+      fixture.totpDir,
+      'first-user-bootstrap-v0.7-reconciliation.json',
+    );
+    const storage = new FileStorageAdapter(config);
+    await storage.init();
+
+    try {
+      expect(await storage.getAllUsers()).toHaveLength(2);
+      expect(await storage.getFirstUserBootstrapReceipt(TENANT)).toBeNull();
+
+      const invited = await storage.createUser(makeLegacyInvitee('legacy_invitee'));
+      expect(invited.handle).toBe('legacy_invitee');
+      expect(await storage.getAllUsers()).toHaveLength(3);
+
+      const markerText = await fs.readFile(markerPath, 'utf8');
+      expect(JSON.parse(markerText)).toMatchObject({
+        version: 1,
+        status: 'legacy-reconciled',
+        sourceVersion: '0.7',
+        owner: {
+          id: 'legacy-owner-001',
+          handle: 'legacy_owner',
+        },
+        reconciledAt: expect.any(String),
+      });
+      expect((await fs.readdir(fixture.totpDir)).some((entry) => entry.endsWith('.tmp')))
+        .toBe(false);
+      await expect(storage.deleteUser('legacy-owner-001')).rejects.toThrow(
+        /legacy.*owner/i,
+      );
+      await storage.close();
+
+      const reopened = new FileStorageAdapter(config);
+      await reopened.init();
+      await expect(reopened.createUser(makeLegacyInvitee('second_invitee')))
+        .resolves.toMatchObject({ handle: 'second_invitee' });
+      expect(await fs.readFile(markerPath, 'utf8')).toBe(markerText);
+      await reopened.close();
+    } finally {
+      await storage.close();
+      await fs.rm(fixture.root, { recursive: true, force: true });
+    }
+  });
+
+  it('fails closed when a legacy file has ambiguous active owners', async () => {
+    const fixture = await copyLegacyFileFixture('tinyland-auth-legacy-ambiguous-');
+    const usersPath = path.join(fixture.authDir, 'admin-users.json');
+    const users = JSON.parse(await fs.readFile(usersPath, 'utf8')) as AdminUser[];
+    users.push({
+      ...users[0],
+      id: 'legacy-owner-002',
+      handle: 'second_legacy_owner',
+      email: 'second-owner@example.test',
+    });
+    await fs.writeFile(usersPath, JSON.stringify(users, null, 2), 'utf8');
+    const markerPath = path.join(
+      fixture.totpDir,
+      'first-user-bootstrap-v0.7-reconciliation.json',
+    );
+    const storage = new FileStorageAdapter({
+      authDir: fixture.authDir,
+      totpDir: fixture.totpDir,
+    });
+    await storage.init();
+
+    try {
+      await expect(storage.createUser(makeLegacyInvitee('blocked_invitee')))
+        .rejects.toThrow(/exactly one active super_admin/i);
+      expect(await storage.getAllUsers()).toHaveLength(3);
+      await expect(fs.readFile(markerPath, 'utf8')).rejects.toMatchObject({
+        code: 'ENOENT',
+      });
+    } finally {
+      await storage.close();
+      await fs.rm(fixture.root, { recursive: true, force: true });
+    }
+  });
+});
+
 describe('framework-neutral first-user bootstrap conformance runner', () => {
   beforeEach(() => {
     vi.useFakeTimers({ toFake: ['Date'] });
@@ -821,6 +1069,15 @@ describe('framework-neutral first-user bootstrap conformance runner', () => {
             Date.parse(claim.claimedAt) < Date.now() - 600_000
               ? structuredClone(claim)
               : storage.claimFirstUserBootstrap(claim),
+        }),
+      },
+      {
+        name: 'ordinary first-user bypass',
+        wrap: (storage) => overrideBootstrapBoundary(storage, {
+          createUser: async (user) => ({
+            ...user,
+            id: 'forged-ordinary-first-user',
+          }),
         }),
       },
       {
@@ -910,9 +1167,13 @@ describe('framework-neutral first-user bootstrap conformance runner', () => {
       tenants.push(tenantId);
       return clockControlledHarness(new MemoryStorageAdapter());
     });
-    expect(results).toHaveLength(21);
-    expect(new Set(tenants).size).toBe(21);
+    expect(results).toHaveLength(28);
+    expect(new Set(tenants).size).toBe(28);
     expect(results.map(({ name }) => name)).toEqual(expect.arrayContaining([
+      'ordinary creation cannot create the first user',
+      'ordinary creation racing finalization cannot steal first authority',
+      'bootstrap claim revokes pre-bootstrap privileged sessions',
+      'concurrent conflicting finalizations have one winner',
       'finalization succeeds at 599999 ms',
       'finalization succeeds at 600000 ms',
       'finalization is rejected at 600001 ms',
@@ -937,6 +1198,6 @@ describe('framework-neutral first-user bootstrap conformance runner', () => {
         async () => fs.rm(root, { recursive: true, force: true }),
       );
     });
-    expect(results).toHaveLength(21);
+    expect(results).toHaveLength(28);
   });
 });

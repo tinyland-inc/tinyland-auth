@@ -86,6 +86,7 @@ export class MemoryStorageAdapter implements IStorageAdapter {
         firstUserBootstrapValueDigest(existing) ===
         firstUserBootstrapValueDigest(structuralClaim)
       ) {
+        this.sessions.clear();
         return cloneBootstrapValue(existing);
       }
       if (!isExpiredInertFirstUserClaim(existing)) {
@@ -106,17 +107,15 @@ export class MemoryStorageAdapter implements IStorageAdapter {
       );
     }
     if (
-      Array.from(this.sessions.values()).some(
-        (session) => session.userId === canonicalClaim.actor.id,
-      ) ||
       this.totpSecrets.has(canonicalClaim.actor.handle.toLowerCase()) ||
       this.backupCodes.has(canonicalClaim.actor.id)
     ) {
       throw new FirstUserBootstrapConflictError(
-        'Claimed actor already has session or factor state',
+        'Claimed actor already has factor state',
       );
     }
 
+    this.sessions.clear();
     const stored = cloneBootstrapValue(canonicalClaim);
     this.firstUserClaims.set(canonicalClaim.tenantId, stored);
     return cloneBootstrapValue(stored);
@@ -249,6 +248,15 @@ export class MemoryStorageAdapter implements IStorageAdapter {
         'Cannot create a user while a first-user bootstrap claim is active',
       );
     }
+    const bootstrapReceipt =
+      this.firstUserReceipts.size === 1
+        ? this.firstUserReceipts.values().next().value
+        : undefined;
+    if (!bootstrapReceipt || !this.users.has(bootstrapReceipt.userId)) {
+      throw new FirstUserBootstrapConflictError(
+        'Ordinary user creation requires a finalized first-user bootstrap receipt',
+      );
+    }
     const id = randomUUID();
     const newUser: AdminUser = { ...user, id };
 
@@ -360,10 +368,12 @@ export class MemoryStorageAdapter implements IStorageAdapter {
         'Session user identity does not match userId',
       );
     }
-    const bootstrapTenant = this.getClaimedTenantForActor(userId);
-    if (bootstrapTenant && !this.isFinalizedTenant(bootstrapTenant)) {
+    const hasActiveBootstrapClaim = Array.from(this.firstUserClaims.keys()).some(
+      (tenantId) => !this.isFinalizedTenant(tenantId),
+    );
+    if (hasActiveBootstrapClaim) {
       throw new FirstUserBootstrapConflictError(
-        'Claimed first-user actor has no session authority before finalization',
+        'session authority is unavailable while first-user bootstrap is claimed',
       );
     }
     const id = randomUUID();

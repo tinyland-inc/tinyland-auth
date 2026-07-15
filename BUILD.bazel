@@ -47,6 +47,7 @@ vitest_bin.vitest_test(
     data = (
         glob(["src/**/*.ts"]) +
         glob(["tests/**/*.ts"]) +
+        glob(["tests/fixtures/**"]) +
         glob(["examples/**/*.ts"]) +
         glob(["docs/**/*.md"])
     ) + [

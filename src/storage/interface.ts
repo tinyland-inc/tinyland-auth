@@ -27,6 +27,20 @@ import type {
 
 
 
+/**
+ * Storage contract for one auth tenant.
+ *
+ * `claimFirstUserBootstrap`, `finalizeFirstUserBootstrap`, and `createUser`
+ * share one atomic authority boundary. Implementations must not allow
+ * `createUser` to insert a user until this same storage boundary contains a
+ * valid finalized first-user receipt and its user. The receipt check and user
+ * insertion must be one transaction or equivalent serialization operation. A
+ * storage-native migration marker may reconcile a non-empty store created by a
+ * pre-protocol release, but it must select legacy ownership fail-closed and
+ * must never authorize an empty store.
+ * Accepting a claim must revoke all sessions already present in this tenant
+ * boundary, and `createSession` must reject every caller until finalization.
+ */
 export interface IStorageAdapter {
   claimFirstUserBootstrap(
     claim: InertFirstUserClaim,
@@ -66,6 +80,14 @@ export interface IStorageAdapter {
   
 
 
+  /**
+   * Creates an ordinary post-bootstrap user.
+   *
+   * This must fail closed before first-user finalization, except for a
+   * storage-native reconciliation of a non-empty pre-protocol store. A
+   * separate `hasUsers()` or receipt preflight is not sufficient because it
+   * races bootstrap finalization.
+   */
   createUser(user: Omit<AdminUser, 'id'>): Promise<AdminUser>;
 
   
@@ -252,6 +274,7 @@ export interface AtomicFirstUserBootstrapStorage extends Pick<
   | 'claimFirstUserBootstrap'
   | 'finalizeFirstUserBootstrap'
   | 'getFirstUserBootstrapReceipt'
+  | 'createUser'
 > {}
 
 export interface AdminIdentityStorage extends Pick<

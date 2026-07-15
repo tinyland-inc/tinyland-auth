@@ -339,6 +339,20 @@ export class BootstrapService {
     };
   }
 
+  private async responseFromCompletedAttempt(
+    state: BootstrapState,
+    handle: string,
+  ): Promise<BootstrapResponse | null> {
+    const receipt = await this.config.storage.getFirstUserBootstrapReceipt(
+      this.config.tenantId,
+    );
+    if (!receipt) return null;
+    if (handle !== receipt.handle) {
+      return { success: false, error: 'Handle mismatch' };
+    }
+    return this.responseFromReceipt(state, receipt);
+  }
+
   private createFinalization(
     pending: BootstrapPendingAttempt,
     encrypted: EncryptedTOTPSecret,
@@ -393,21 +407,22 @@ export class BootstrapService {
     }
 
     try {
-      const existingReceipt = await this.config.storage.getFirstUserBootstrapReceipt(
-        this.config.tenantId,
+      const completed = await this.responseFromCompletedAttempt(
+        state,
+        verification.handle,
       );
-      if (existingReceipt) {
-        if (verification.handle !== existingReceipt.handle) {
-          return { success: false, error: 'Handle mismatch' };
-        }
-        return this.responseFromReceipt(state, existingReceipt);
-      }
+      if (completed) return completed;
 
       let pending = await this.config.attemptStore.get(
         this.config.tenantId,
         state.attemptId,
       );
       if (!pending) {
+        const replay = await this.responseFromCompletedAttempt(
+          state,
+          verification.handle,
+        );
+        if (replay) return replay;
         return { success: false, error: 'Invalid or expired bootstrap state' };
       }
       if (pending.handle !== verification.handle) {
@@ -491,6 +506,20 @@ export class BootstrapService {
       ).catch(() => false);
       return response;
     } catch (error) {
+      try {
+        const replay = await this.responseFromCompletedAttempt(
+          state,
+          verification.handle,
+        );
+        if (replay) return replay;
+      } catch (receiptError) {
+        return {
+          success: false,
+          error: receiptError instanceof Error
+            ? receiptError.message
+            : 'Bootstrap failed',
+        };
+      }
       return {
         success: false,
         error: error instanceof Error ? error.message : 'Bootstrap failed',

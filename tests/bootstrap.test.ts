@@ -76,27 +76,10 @@ describe('BootstrapService atomic first-user flow', () => {
     return service.complete(state, { handle: 'admin', totpCode });
   }
 
-  it('reports legacy users as not bootstrapable but not fully configured', async () => {
+  it('reports an empty store as bootstrapable but not configured', async () => {
     await expect(service.getStatus()).resolves.toEqual({
       needsBootstrap: true,
       hasUsers: false,
-      systemConfigured: false,
-    });
-    const timestamp = new Date().toISOString();
-    await storage.createUser({
-      handle: 'legacy_admin',
-      passwordHash: 'legacy-hash',
-      role: 'admin',
-      isActive: true,
-      totpEnabled: false,
-      needsOnboarding: false,
-      onboardingStep: 0,
-      createdAt: timestamp,
-      updatedAt: timestamp,
-    });
-    await expect(service.getStatus()).resolves.toEqual({
-      needsBootstrap: false,
-      hasUsers: true,
       systemConfigured: false,
     });
   });
@@ -118,6 +101,26 @@ describe('BootstrapService atomic first-user flow', () => {
       hasUsers: false,
       systemConfigured: false,
     });
+  });
+
+  it('does not put browser fingerprint or Tempo evidence into bootstrap authority', async () => {
+    const result = await service.initiate({
+      handle: 'admin',
+      password: 'SecurePassword123!',
+      displayName: 'Admin User',
+      browserFingerprint: 'browser-evidence-only',
+      tempoTraceId: 'tempo-evidence-only',
+    } as Parameters<BootstrapService['initiate']>[0] & {
+      browserFingerprint: string;
+      tempoTraceId: string;
+    });
+    const pending = await attemptStore.get(TENANT_ID, result.state.attemptId);
+    expect(pending).not.toHaveProperty('browserFingerprint');
+    expect(pending).not.toHaveProperty('tempoTraceId');
+    const completed = await complete(result.state);
+    expect(completed.success).toBe(true);
+    expect(completed.user).not.toHaveProperty('browserFingerprint');
+    expect(completed.user).not.toHaveProperty('tempoTraceId');
   });
 
   it('canonicalizes optional profile strings before attempt custody', async () => {
@@ -148,18 +151,7 @@ describe('BootstrapService atomic first-user flow', () => {
       }),
     ).rejects.toThrow('Handle must start with a letter');
 
-    const timestamp = new Date().toISOString();
-    await storage.createUser({
-      handle: 'existing',
-      passwordHash: 'hash',
-      role: 'admin',
-      isActive: true,
-      totpEnabled: false,
-      needsOnboarding: false,
-      onboardingStep: 0,
-      createdAt: timestamp,
-      updatedAt: timestamp,
-    });
+    vi.spyOn(storage, 'hasUsers').mockResolvedValue(true);
     await expect(initiate()).rejects.toThrow('Bootstrap not allowed');
   });
 
@@ -468,6 +460,42 @@ describe('BootstrapService atomic first-user flow', () => {
     expect(await storage.getAllUsers()).toHaveLength(1);
   });
 
+  it('replays a delayed exact completion after its attempt is deleted', async () => {
+    let encryptionStarted!: () => void;
+    let releaseEncryption!: () => void;
+    const started = new Promise<void>((resolve) => {
+      encryptionStarted = resolve;
+    });
+    const encryptionGate = new Promise<void>((resolve) => {
+      releaseEncryption = resolve;
+    });
+    const delayed = new BootstrapService({
+      ...config,
+      encryptTOTPSecret: async (handle, secret) => {
+        encryptionStarted();
+        await encryptionGate;
+        return mockEncryptTOTPSecret(handle, secret);
+      },
+    });
+    const { state } = await delayed.initiate({
+      handle: 'admin',
+      password: 'SecurePassword123!',
+      displayName: 'Admin User',
+    });
+
+    const delayedCompletion = delayed.complete(state, {
+      handle: 'admin',
+      totpCode: '123456',
+    });
+    await started;
+    const winner = await complete(state);
+    expect(winner.success).toBe(true);
+    expect(await attemptStore.get(TENANT_ID, state.attemptId)).toBeNull();
+
+    releaseEncryption();
+    await expect(delayedCompletion).resolves.toEqual(winner);
+  });
+
   it('rejects stale profile finalization and succeeds from a fresh snapshot', async () => {
     let releaseEncryption!: () => void;
     let encryptionStarted!: () => void;
@@ -591,6 +619,22 @@ describe('BootstrapService atomic first-user flow', () => {
     };
     expect((await complete(state)).success).toBe(true);
     expect(await storage.getFirstUserBootstrapReceipt(TENANT_ID)).not.toBeNull();
+  });
+
+  it('blocks ordinary creation before any bootstrap claim exists', async () => {
+    const timestamp = new Date().toISOString();
+    await expect(storage.createUser({
+      handle: 'bypass',
+      passwordHash: 'hash',
+      role: 'super_admin',
+      isActive: true,
+      totpEnabled: false,
+      needsOnboarding: false,
+      onboardingStep: 0,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    })).rejects.toThrow(/finalized first-user bootstrap receipt/i);
+    expect(await storage.hasUsers()).toBe(false);
   });
 
   it('blocks ordinary creation while the inert claim is active', async () => {

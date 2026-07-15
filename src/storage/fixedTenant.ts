@@ -5,7 +5,8 @@
  * takes `tenantId` as its first parameter) and the standard `IStorageAdapter`
  * (Pattern A — no tenantId parameter). The tenant-scoped backend must natively
  * implement the complete interface below. Current PG/Redis packages implement
- * only its legacy methods and cannot back the unreleased atomic bootstrap flow.
+ * only its legacy methods and cannot back the unreleased atomic bootstrap flow
+ * or its transactionally receipt-gated ordinary user creation.
  *
  * @example
  * ```typescript
@@ -54,17 +55,18 @@ const UUID_RE =
  *
  * Every method takes `tenantId` as its first parameter. Existing PG/Redis
  * adapters implement the legacy portion of this shape, but do not satisfy the
- * unreleased 0.8 interface until their atomic bootstrap methods land and pass
- * conformance.
+ * unreleased 0.8 interface until their atomic bootstrap methods and
+ * transactionally receipt-gated `createUser` land and pass conformance.
  */
 export interface TenantScopedStorage {
   init(): Promise<void>;
   close(): Promise<void>;
 
   /**
-   * These methods must be one backend-owned atomic protocol. A fixed-tenant
-   * wrapper only forwards them and cannot manufacture atomicity by composing
-   * ordinary user, factor, or backup-code writes.
+   * These methods and `createUser` must be one backend-owned atomic protocol.
+   * A fixed-tenant wrapper only forwards them and cannot manufacture atomicity
+   * by composing receipt reads with ordinary user, factor, or backup-code
+   * writes.
    */
   claimFirstUserBootstrap(
     tenantId: string,
@@ -82,6 +84,10 @@ export interface TenantScopedStorage {
   getUserByHandle(tenantId: string, handle: string): Promise<AdminUser | null>;
   getUserByEmail(tenantId: string, email: string): Promise<AdminUser | null>;
   getAllUsers(tenantId: string): Promise<AdminUser[]>;
+  /**
+   * Atomically require this tenant's finalized first-user receipt and user,
+   * then insert an ordinary user in the same backend transaction.
+   */
   createUser(
     tenantId: string,
     user: Omit<AdminUser, "id" | "tenantId">,

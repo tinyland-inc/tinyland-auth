@@ -258,6 +258,21 @@ user, credential, role, session authority, TOTP enrollment, or backup-code use
 exists before one atomic finalization. The immutable completion receipt makes
 an exact retry idempotent and rejects mismatched retries.
 
+Claim acceptance revokes every session already in the built-in adapter's
+single-tenant boundary and rejects new sessions until finalization. Afterward,
+normal sessions can be created. Role and permission guards require the matching
+storage-loaded `event.locals.user`; an embedded session role alone is not
+privileged authority, which is why the `loadUser` callback in section 5 is
+load-bearing.
+
+A persisted 0.7 file store is a separate migration case: it has users but no
+0.8 receipt and must not run the zero-user flow below. On its next ordinary
+`createUser` (including invitation acceptance), the file adapter requires
+exactly one active, unlocked `super_admin`, atomically records that user in an
+immutable reconciliation marker under `totpDir`, and proceeds. Zero or multiple
+eligible owners fail closed for operator repair. The marker preserves legacy
+operation without pretending that a 0.8 claim/finalization receipt exists.
+
 ```ts
 // scripts/auth-seed.ts  (run with: node --env-file=.env scripts/auth-seed.ts)
 import {

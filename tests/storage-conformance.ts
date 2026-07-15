@@ -4,6 +4,7 @@ import type { IStorageAdapter } from '../src/storage/interface.js';
 import {
   FIRST_USER_BOOTSTRAP_CLAIM_MAX_AGE_MS,
   FirstUserBootstrapConflictError,
+  firstUserBootstrapMaterialDigest,
   firstUserBootstrapValueDigest,
   isValidInertFirstUserClaim,
   type FirstUserBootstrapFinalization,
@@ -99,6 +100,23 @@ export function makeFinalization(
   };
 }
 
+function makeOrdinaryUser(
+  handle: string,
+): Omit<FirstUserBootstrapFinalization['user'], 'id'> {
+  const timestamp = new Date().toISOString();
+  return {
+    handle,
+    passwordHash: SYNTHETIC_BCRYPT_HASH,
+    totpEnabled: false,
+    role: 'member',
+    isActive: true,
+    needsOnboarding: false,
+    onboardingStep: 0,
+    createdAt: timestamp,
+    updatedAt: timestamp,
+  };
+}
+
 export function describeStorageConformance(
   name: string,
   createHarness: StorageConformanceFactory,
@@ -136,6 +154,14 @@ export function describeStorageConformance(
       if (rejected?.status === 'rejected') {
         expect(rejected.reason).toBeInstanceOf(FirstUserBootstrapConflictError);
       }
+    });
+
+    it('rejects ordinary creation before first-user finalization', async () => {
+      await expect(
+        storage.createUser(makeOrdinaryUser('ordinary_first_user')),
+      ).rejects.toThrow(/finalized first-user bootstrap receipt/i);
+      expect(await storage.hasUsers()).toBe(false);
+      expect(await storage.getFirstUserBootstrapReceipt(TENANT)).toBeNull();
     });
 
     it('rejects active or credentialed claims through the reusable validator', async () => {
@@ -224,12 +250,26 @@ export function describeStorageConformance(
       ).rejects.toThrow(/before finalization/);
     });
 
-    it('rejects a claim when the actor already has a session', async () => {
+    it('revokes unrelated privileged sessions when a claim is accepted', async () => {
       const claim = makeClaim();
-      await storage.createSession(claim.actor.id, { id: claim.actor.id });
-      await expect(storage.claimFirstUserBootstrap(claim)).rejects.toThrow(
-        /already has session or factor state/,
-      );
+      const unrelatedUserId = 'pre-bootstrap-privileged-session';
+      const session = await storage.createSession(unrelatedUserId, {
+        id: unrelatedUserId,
+        handle: 'pre_bootstrap_admin',
+        role: 'super_admin',
+      });
+
+      await expect(storage.claimFirstUserBootstrap(claim)).resolves.toEqual(claim);
+      expect(await storage.getSession(session.id)).toBeNull();
+      await expect(storage.createSession(unrelatedUserId, {
+        id: unrelatedUserId,
+        role: 'super_admin',
+      })).rejects.toThrow(/session authority|before finalization/i);
+
+      const finalization = makeFinalization(claim);
+      await storage.finalizeFirstUserBootstrap(finalization);
+      const postBootstrap = await storage.createSession(claim.actor.id, finalization.user);
+      expect(await storage.getSession(postBootstrap.id)).not.toBeNull();
     });
 
     it('replays an exact expired claim and safely replaces an abandoned one', async () => {
@@ -325,6 +365,32 @@ export function describeStorageConformance(
       expect(await storage.getFirstUserBootstrapReceipt(TENANT)).toBeNull();
     });
 
+    it('rejects missing, mismatched, and already-consumed claims', async () => {
+      const claim = makeClaim();
+      const finalization = makeFinalization(claim);
+      await expect(storage.finalizeFirstUserBootstrap(finalization)).rejects.toThrow(
+        /no active first-user bootstrap claim/i,
+      );
+
+      await storage.claimFirstUserBootstrap(claim);
+      const mismatch = makeFinalization({
+        ...claim,
+        attemptId: 'different-bootstrap-attempt',
+      });
+      await expect(storage.finalizeFirstUserBootstrap(mismatch)).rejects.toThrow(
+        /does not match|active claim/i,
+      );
+      expect(await storage.hasUsers()).toBe(false);
+
+      await storage.finalizeFirstUserBootstrap(finalization);
+      await expect(storage.claimFirstUserBootstrap(claim)).rejects.toThrow(
+        /already finalized/i,
+      );
+      await expect(storage.claimFirstUserBootstrap(makeClaim({
+        attemptId: 'new-bootstrap-attempt',
+      }))).rejects.toThrow(/already finalized/i);
+    });
+
     it('returns the immutable receipt for an exact finalization replay', async () => {
       const claim = makeClaim();
       const finalization = makeFinalization(claim);
@@ -354,6 +420,28 @@ export function describeStorageConformance(
         storage.finalizeFirstUserBootstrap(finalization),
       ]);
       expect(receipts[0]).toEqual(receipts[1]);
+    });
+
+    it('allows exactly one of two conflicting finalizations to win', async () => {
+      const claim = makeClaim();
+      const first = makeFinalization(claim);
+      const second = structuredClone(first);
+      second.user.displayName = 'Competing Bootstrap Admin';
+      await storage.claimFirstUserBootstrap(claim);
+
+      const outcomes = await Promise.allSettled([
+        storage.finalizeFirstUserBootstrap(first),
+        storage.finalizeFirstUserBootstrap(second),
+      ]);
+      expect(outcomes.filter((outcome) => outcome.status === 'fulfilled')).toHaveLength(1);
+      expect(outcomes.filter((outcome) => outcome.status === 'rejected')).toHaveLength(1);
+      const winner = outcomes[0].status === 'fulfilled' ? first : second;
+      expect(await storage.getFirstUserBootstrapReceipt(TENANT)).toMatchObject({
+        materialDigest: firstUserBootstrapMaterialDigest(winner),
+      });
+      expect(await storage.getUser(claim.actor.id)).toMatchObject({
+        displayName: winner.user.displayName,
+      });
     });
 
     it('rejects a mismatched finalization replay', async () => {
@@ -430,14 +518,13 @@ export function describeStorageConformance(
     });
 
     it('keeps session identity immutable and returned sessions detached', async () => {
-      const unrelatedUserId = 'unrelated-session-user';
-      const session = await storage.createSession(unrelatedUserId, {
-        id: unrelatedUserId,
-        handle: 'unrelated_session_user',
-        role: 'member',
-      });
       const claim = makeClaim();
       await storage.claimFirstUserBootstrap(claim);
+      await storage.finalizeFirstUserBootstrap(makeFinalization(claim));
+      const unrelated = await storage.createUser(
+        makeOrdinaryUser('unrelated_session_user'),
+      );
+      const session = await storage.createSession(unrelated.id, unrelated);
 
       await expect(storage.updateSession(session.id, {
         userId: claim.actor.id,
@@ -451,29 +538,52 @@ export function describeStorageConformance(
       returned!.userId = claim.actor.id;
       returned!.user!.id = claim.actor.id;
       expect(await storage.getSession(session.id)).toMatchObject({
-        userId: unrelatedUserId,
-        user: { id: unrelatedUserId },
+        userId: unrelated.id,
+        user: { id: unrelated.id },
       });
     });
 
     it('revokes sessions before deleting an ordinary non-finalized user', async () => {
-      const now = new Date().toISOString();
-      const user = await storage.createUser({
-        handle: 'ordinary_user',
-        passwordHash: SYNTHETIC_BCRYPT_HASH,
-        totpEnabled: false,
-        role: 'member',
-        isActive: true,
-        needsOnboarding: false,
-        onboardingStep: 0,
-        createdAt: now,
-        updatedAt: now,
-      });
+      const claim = makeClaim();
+      await storage.claimFirstUserBootstrap(claim);
+      await storage.finalizeFirstUserBootstrap(makeFinalization(claim));
+      const user = await storage.createUser(makeOrdinaryUser('ordinary_user'));
       const session = await storage.createSession(user.id, user);
 
       expect(await storage.deleteUser(user.id)).toBe(true);
       expect(await storage.getSession(session.id)).toBeNull();
       expect(await storage.getUser(user.id)).toBeNull();
+    });
+
+    it('preserves ordinary creation after first-user finalization', async () => {
+      const claim = makeClaim();
+      await storage.claimFirstUserBootstrap(claim);
+      await storage.finalizeFirstUserBootstrap(makeFinalization(claim));
+
+      const ordinary = await storage.createUser(makeOrdinaryUser('post_bootstrap_user'));
+      expect(ordinary.id).not.toBe(claim.actor.id);
+      expect(await storage.getAllUsers()).toHaveLength(2);
+      expect(await storage.getUser(ordinary.id)).toEqual(ordinary);
+    });
+
+    it('does not let ordinary creation steal a finalize race', async () => {
+      const claim = makeClaim();
+      const finalization = makeFinalization(claim);
+      await storage.claimFirstUserBootstrap(claim);
+      const ordinaryData = makeOrdinaryUser('racing_ordinary_user');
+
+      const [ordinary, finalized] = await Promise.allSettled([
+        storage.createUser(ordinaryData),
+        storage.finalizeFirstUserBootstrap(finalization),
+      ]);
+      expect(finalized.status).toBe('fulfilled');
+      expect(await storage.getUser(claim.actor.id)).toEqual(finalization.user);
+      expect(await storage.getFirstUserBootstrapReceipt(TENANT)).not.toBeNull();
+      if (ordinary.status === 'fulfilled') {
+        expect(await storage.getUser(ordinary.value.id)).toEqual(ordinary.value);
+      } else {
+        expect(await storage.getUserByHandle(ordinaryData.handle)).toBeNull();
+      }
     });
 
     it('rejects invalid bcrypt, factor-use, backup uniqueness, and timestamps', async () => {
@@ -495,6 +605,12 @@ export function describeStorageConformance(
         (value) => {
           (value.user as unknown as Record<string, unknown>).displayName =
             () => undefined;
+        },
+        (value) => {
+          Object.assign(value.user as unknown as Record<string, unknown>, {
+            browserFingerprint: 'not-bootstrap-authority',
+            tempoTraceId: 'not-bootstrap-authority',
+          });
         },
         (value) => { value.totpSecret.lastUsedTotpStep = 1; },
         (value) => { value.backupCodes.codes[1].hash = value.backupCodes.codes[0].hash; },
