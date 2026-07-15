@@ -1,4 +1,4 @@
-import { createHash } from 'crypto';
+import { createHash, createHmac } from 'crypto';
 import type {
   AdminUser,
   BackupCodeSet,
@@ -15,6 +15,7 @@ const BACKUP_CODE_HASH_RE = /^[a-f0-9]{64}$/;
 const MATERIAL_DIGEST_RE = /^[a-f0-9]{64}$/;
 const ACTOR_ID_RE = /^[A-Za-z0-9][A-Za-z0-9._:-]*$/;
 const HANDLE_RE = /^[a-zA-Z][a-zA-Z0-9_-]{2,29}$/;
+const MATERIAL_DIGEST_DOMAIN = 'tinyland-auth:first-user-bootstrap-material:v1';
 
 const CLAIM_KEYS = ['version', 'tenantId', 'attemptId', 'actor', 'claimedAt'] as const;
 const ACTOR_KEYS = [
@@ -442,6 +443,13 @@ export function firstUserBootstrapValueDigest(value: unknown): string {
   return createHash('sha256').update(canonicalJson(value)).digest('hex');
 }
 
+export function firstUserBootstrapValuesEqual(
+  left: unknown,
+  right: unknown,
+): boolean {
+  return canonicalJson(left) === canonicalJson(right);
+}
+
 export function canonicalizeFirstUserBootstrapClaimResult(
   value: unknown,
   expectedValue: unknown,
@@ -460,7 +468,56 @@ export function canonicalizeFirstUserBootstrapClaimResult(
 export function firstUserBootstrapMaterialDigest(
   finalization: FirstUserBootstrapFinalization,
 ): string {
-  return firstUserBootstrapValueDigest(finalization);
+  // This is an equality commitment over already-hashed or encrypted bootstrap
+  // material, not a password verifier. Keep it separate from structural digests.
+  return scopedMaterialDigest(
+    'finalization',
+    finalization.tenantId,
+    finalization.attemptId,
+    finalization,
+  );
+}
+
+export function firstUserBootstrapPendingAttemptMaterialDigest(
+  tenantId: string,
+  attemptId: string,
+  value: unknown,
+): string {
+  return scopedMaterialDigest('pending-attempt', tenantId, attemptId, value);
+}
+
+function scopedMaterialDigest(
+  scope: 'finalization' | 'pending-attempt',
+  tenantId: string,
+  attemptId: string,
+  value: unknown,
+): string {
+  const key = canonicalJson([MATERIAL_DIGEST_DOMAIN, scope, tenantId, attemptId]);
+  return createHmac('sha256', key)
+    .update(MATERIAL_DIGEST_DOMAIN)
+    .update('\0')
+    .update(scope)
+    .update('\0')
+    .update(canonicalJson(value))
+    .digest('hex');
+}
+
+function isValidBootstrapEmail(value: string): boolean {
+  let atIndex = -1;
+  for (let index = 0; index < value.length; index += 1) {
+    const character = value[index];
+    if (character.trim().length === 0) return false;
+    if (character === '@') {
+      if (atIndex !== -1) return false;
+      atIndex = index;
+    }
+  }
+  const finalDotIndex = value.lastIndexOf('.');
+  return (
+    atIndex > 0 &&
+    finalDotIndex > atIndex + 1 &&
+    finalDotIndex < value.length - 1
+  );
 }
 
 function canonicalOptionalString(
@@ -512,7 +569,7 @@ function canonicalizeUser(value: unknown): AdminUser & { tenantId?: string } {
   }
   if (hasOwn(value, 'email')) {
     const email = canonicalString(value.email, 'finalization.user.email', 320, { lowercase: true });
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    if (!isValidBootstrapEmail(email)) {
       validationError('finalization.user.email is invalid');
     }
     user.email = email;

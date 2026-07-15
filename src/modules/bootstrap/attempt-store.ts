@@ -2,7 +2,8 @@ import type { BackupCodeSet } from '../../types/auth.js';
 import {
   FirstUserBootstrapConflictError,
   cloneBootstrapValue,
-  firstUserBootstrapValueDigest,
+  firstUserBootstrapMaterialDigest,
+  firstUserBootstrapPendingAttemptMaterialDigest,
   type FirstUserBootstrapFinalization,
 } from '../../storage/firstUserBootstrap.js';
 
@@ -61,7 +62,11 @@ export function bootstrapPendingAttemptDigest(
   attempt: BootstrapPendingAttempt,
 ): string {
   const { finalization: _finalization, ...mutableAttempt } = attempt;
-  return firstUserBootstrapValueDigest(mutableAttempt);
+  return firstUserBootstrapPendingAttemptMaterialDigest(
+    attempt.tenantId,
+    attempt.attemptId,
+    mutableAttempt,
+  );
 }
 
 /** Single-process custody. Multi-replica consumers need a durable CAS store. */
@@ -452,9 +457,15 @@ export async function runBootstrapAttemptStoreConformance(
           finalization,
         ),
       ]);
+      const firstPrepared = prepared[0].finalization;
+      const secondPrepared = prepared[1].finalization;
       assertConformance(
-        firstUserBootstrapValueDigest(prepared[0].finalization) ===
-          firstUserBootstrapValueDigest(prepared[1].finalization),
+        firstPrepared !== undefined && secondPrepared !== undefined,
+        'concurrent preparation did not retain finalized authority',
+      );
+      assertConformance(
+        firstUserBootstrapMaterialDigest(firstPrepared) ===
+          firstUserBootstrapMaterialDigest(secondPrepared),
         'concurrent preparation returned different authority',
       );
     }),
@@ -630,9 +641,15 @@ export async function runBootstrapAttemptStoreConformance(
           second,
         ),
       ]);
+      const firstPrepared = prepared[0].finalization;
+      const secondPrepared = prepared[1].finalization;
       assertConformance(
-        firstUserBootstrapValueDigest(prepared[0].finalization) ===
-          firstUserBootstrapValueDigest(prepared[1].finalization),
+        firstPrepared !== undefined && secondPrepared !== undefined,
+        'concurrent preparation did not retain finalized authority',
+      );
+      assertConformance(
+        firstUserBootstrapMaterialDigest(firstPrepared) ===
+          firstUserBootstrapMaterialDigest(secondPrepared),
         'concurrent different finalization did not converge on one winner',
       );
     }),

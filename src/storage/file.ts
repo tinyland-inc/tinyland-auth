@@ -31,6 +31,7 @@ import {
   createFirstUserBootstrapReceipt,
   firstUserBootstrapMaterialDigest,
   firstUserBootstrapValueDigest,
+  firstUserBootstrapValuesEqual,
   isExpiredInertFirstUserClaim,
   normalizeFirstUserBootstrapTenantId,
   parseFirstUserBootstrapReceipt,
@@ -216,8 +217,7 @@ function parseFirstUserBootstrapRecord(
   );
   if (
     initialState.tenantId !== tenantId ||
-    firstUserBootstrapValueDigest(value.initialState) !==
-      firstUserBootstrapValueDigest(initialState)
+    !firstUserBootstrapValuesEqual(value.initialState, initialState)
   ) {
     throw new FirstUserBootstrapValidationError(
       'Corrupted canonical first-user bootstrap finalization',
